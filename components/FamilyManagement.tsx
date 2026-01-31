@@ -33,6 +33,7 @@ export const FamilyManagement: React.FC<Props> = ({ parent }) => {
     e.preventDefault();
     setIsLoading(true);
     try {
+      // Fix: Remove non-existent 'goals' property from the UserAccount object literal
       const newChild: UserAccount = {
         id: Math.random().toString(36).substr(2, 9),
         userId: childUserId,
@@ -42,8 +43,7 @@ export const FamilyManagement: React.FC<Props> = ({ parent }) => {
         role: UserRole.STUDENT,
         parentId: parent.id,
         weeklySchedule: DEFAULT_SCHEDULE,
-        xp: 0,
-        goals: []
+        xp: 0
       };
       await storageService.saveUser(newChild);
       

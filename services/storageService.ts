@@ -1,92 +1,83 @@
 
-import { UserAccount, DailyLog, UserRole } from '../types';
-import { supabase, isCloudEnabled } from './supabaseClient';
+import { UserAccount, DailyLog } from '../types';
+import { sql, isCloudEnabled } from './neonClient';
 
 const LOCAL_STORAGE_KEYS = {
-  PROFILE: 'timexp_profile',
-  LOGS: 'timexp_logs',
   USERS: 'timexp_all_users',
-  SESSION: 'timexp_session'
+  SESSION: 'timexp_session',
+  LOGS: 'timexp_logs'
 };
 
 export const storageService = {
   isCloud: () => isCloudEnabled,
 
   getUserProfile: async (id: string): Promise<UserAccount | null> => {
-    if (isCloudEnabled && supabase) {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', id)
-        .single();
-      
-      if (!error && data) {
-        return {
-          id: data.id,
-          userId: data.user_id,
-          name: data.name,
-          phone: data.phone || '',
-          passwordHash: data.password_hash || '',
-          role: data.role,
-          parentId: data.parent_id,
-          childrenIds: data.children_ids || [],
-          weeklySchedule: data.weekly_schedule,
-          xp: data.xp,
-          grade: data.grade,
-          specificGrade: data.specific_grade,
-        } as UserAccount;
-      }
+    if (isCloudEnabled && sql) {
+      try {
+        const rows = await sql`SELECT * FROM profiles WHERE id = ${id}`;
+        if (rows && rows.length > 0) {
+          const d = rows[0];
+          return {
+            id: d.id,
+            userId: d.user_id,
+            name: d.name,
+            phone: d.phone || '',
+            role: d.role,
+            grade: d.grade,
+            specificGrade: d.specific_grade,
+            weeklySchedule: d.weekly_schedule,
+            xp: d.xp || 0,
+            onboardingCompleted: d.onboarding_completed
+          } as UserAccount;
+        }
+      } catch (e) { console.error("Neon Profile Fetch Error:", e); }
     }
-
-    // Fallback to Local Storage
     const localProfiles = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.USERS) || '[]');
     return localProfiles.find((u: UserAccount) => u.id === id) || null;
   },
 
   getUsers: async (): Promise<UserAccount[]> => {
-    if (isCloudEnabled && supabase) {
-      const { data, error } = await supabase.from('profiles').select('*');
-      if (!error && data) {
-        return data.map(d => ({
+    if (isCloudEnabled && sql) {
+      try {
+        const rows = await sql`SELECT * FROM profiles`;
+        return rows.map(d => ({
           id: d.id,
           userId: d.user_id,
           name: d.name,
           role: d.role,
           weeklySchedule: d.weekly_schedule,
-          xp: d.xp,
-          parentId: d.parent_id
+          xp: d.xp || 0,
+          onboardingCompleted: d.onboarding_completed
         })) as UserAccount[];
-      }
+      } catch (e) { console.error("Neon Users Fetch Error:", e); }
     }
     return JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.USERS) || '[]');
   },
 
   saveUser: async (user: UserAccount): Promise<void> => {
-    if (isCloudEnabled && supabase) {
+    if (isCloudEnabled && sql) {
       try {
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          user_id: user.userId,
-          name: user.name,
-          role: user.role,
-          phone: user.phone,
-          grade: user.grade,
-          specific_grade: user.specificGrade,
-          weekly_schedule: user.weeklySchedule,
-          xp: user.xp,
-          updated_at: new Date()
-        });
-      } catch (e) { console.warn("Cloud save failed, relying on local."); }
+        await sql`
+          INSERT INTO profiles (id, user_id, name, role, phone, grade, specific_grade, weekly_schedule, xp, onboarding_completed, updated_at)
+          VALUES (${user.id}, ${user.userId}, ${user.name}, ${user.role}, ${user.phone}, ${user.grade}, ${user.specificGrade}, ${JSON.stringify(user.weeklySchedule)}, ${user.xp}, ${user.onboardingCompleted || false}, NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            grade = EXCLUDED.grade,
+            specific_grade = EXCLUDED.specific_grade,
+            weekly_schedule = EXCLUDED.weekly_schedule,
+            xp = EXCLUDED.xp,
+            onboarding_completed = EXCLUDED.onboarding_completed,
+            updated_at = NOW()
+        `;
+      } catch (e) { console.warn("Neon save failed, fallback to local.", e); }
     }
 
-    // Always update Local Storage as secondary/fallback
     const users = await storageService.getUsers();
     const index = users.findIndex(u => u.id === user.id);
     if (index > -1) users[index] = user;
     else users.push(user);
     localStorage.setItem(LOCAL_STORAGE_KEYS.USERS, JSON.stringify(users));
     
-    // Update current session if it's the same user
     const currentSession = storageService.getSession();
     if (currentSession?.id === user.id) {
       storageService.setSession(user);
@@ -94,38 +85,33 @@ export const storageService = {
   },
 
   getDailyLogs: async (userId: string): Promise<DailyLog[]> => {
-    if (isCloudEnabled && supabase) {
-      const { data, error } = await supabase
-        .from('daily_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: false });
-      
-      if (!error && data) {
-        return data.map(d => ({
+    if (isCloudEnabled && sql) {
+      try {
+        const rows = await sql`SELECT * FROM daily_logs WHERE user_id = ${userId} ORDER BY date DESC`;
+        return rows.map(d => ({
           id: d.id,
           userId: d.user_id,
           date: d.date,
           actualActivities: d.actual_activities,
           plannedSnapshot: d.planned_snapshot
         }));
-      }
+      } catch (e) { console.error("Neon Logs Fetch Error:", e); }
     }
     const allLogs = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.LOGS) || '[]');
     return allLogs.filter((l: DailyLog) => l.userId === userId);
   },
 
   saveDailyLog: async (log: DailyLog): Promise<void> => {
-    if (isCloudEnabled && supabase) {
+    if (isCloudEnabled && sql) {
       try {
-        await supabase.from('daily_logs').upsert({
-          id: log.id.includes('demo') || log.id.includes('init') ? undefined : log.id,
-          user_id: log.userId,
-          date: log.date,
-          actual_activities: log.actualActivities,
-          planned_snapshot: log.plannedSnapshot
-        }, { onConflict: 'user_id, date' });
-      } catch (e) { console.warn("Cloud log save failed."); }
+        await sql`
+          INSERT INTO daily_logs (id, user_id, date, actual_activities, planned_snapshot)
+          VALUES (${log.id}, ${log.userId}, ${log.date}, ${JSON.stringify(log.actualActivities)}, ${JSON.stringify(log.plannedSnapshot)})
+          ON CONFLICT (user_id, date) DO UPDATE SET
+            actual_activities = EXCLUDED.actual_activities,
+            planned_snapshot = EXCLUDED.planned_snapshot
+        `;
+      } catch (e) { console.warn("Neon log save failed.", e); }
     }
 
     const allLogs = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS.LOGS) || '[]');
@@ -148,7 +134,6 @@ export const storageService = {
   },
 
   clearAll: async () => {
-    if (isCloudEnabled && supabase) await supabase.auth.signOut();
     localStorage.clear();
     window.location.reload();
   }

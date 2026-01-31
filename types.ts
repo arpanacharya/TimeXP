@@ -28,16 +28,6 @@ export enum UserRole {
   PARENT = 'PARENT'
 }
 
-export interface XpGoal {
-  id: string;
-  target: number;
-  period: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'INFINITE';
-  activityCategory?: ActivityCategory;
-  startValue: number;
-  createdAt: string;
-  active: boolean;
-}
-
 export interface UserAccount {
   id: string;
   userId: string;
@@ -49,9 +39,9 @@ export interface UserAccount {
   childrenIds?: string[];
   weeklySchedule: WeeklySchedule;
   xp: number;
-  goals?: XpGoal[]; 
   grade?: GradeLevel;
-  specificGrade?: number; // 1-12, or 1-4 for Uni
+  specificGrade?: number;
+  onboardingCompleted?: boolean;
 }
 
 export interface ScheduleItem {
@@ -80,10 +70,4 @@ export interface DailyLog {
   date: string; 
   actualActivities: ScheduleItem[];
   plannedSnapshot: ScheduleItem[];
-}
-
-export interface AuthState {
-  user: UserAccount | null;
-  isAuthenticated: boolean;
-  mfaPending: boolean;
 }

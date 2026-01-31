@@ -7,8 +7,8 @@ TimeXP is a high-performance, gamified schedule tracker designed for students. I
 - **Mission Dashboard**: Real-time tracking of your daily schedule with a precision timeline.
 - **XP System**: Earn points for completing tasks and level up your academic rank.
 - **Tactical Intel**: AI-driven schedule analysis powered by Gemini 3 Flash.
-- **Hybrid Storage**: Works instantly via `localStorage` or syncs globally with **Supabase**.
-- **Family Management**: Parent/Mentor mode to oversee student progress and authorize tasks.
+- **Neon Cloud Persistence**: Serverless Postgres storage for your work history.
+- **Guided Onboarding**: Interactive tutorial for new specialists.
 
 ## 🛠️ Local Setup
 
@@ -27,8 +27,7 @@ TimeXP is a high-performance, gamified schedule tracker designed for students. I
    Create a `.env` file in the root:
    ```env
    API_KEY=your_gemini_api_key
-   SUPABASE_URL=your_supabase_project_url
-   SUPABASE_ANON_KEY=your_supabase_anon_key
+   NEON_DATABASE_URL=your_neon_connection_string
    ```
 
 4. **Run Development Server**
@@ -43,13 +42,13 @@ TimeXP is a high-performance, gamified schedule tracker designed for students. I
 3. **Build Settings**:
    - **Build Command**: `npm run build`
    - **Publish Directory**: `dist`
-4. **Environment Variables**: Add your `API_KEY` (and optional Supabase keys) in the Netlify site settings under **Environment variables**.
+4. **Environment Variables**: Add your `API_KEY` and `NEON_DATABASE_URL` in the Netlify site settings.
 
-## 🛡️ Database Configuration (Optional)
-This app works out of the box using your browser's local storage. To enable cloud sync:
-1. Create a project at [Supabase](https://supabase.com).
-2. Create a `profiles` table and a `daily_logs` table.
-3. Provide the URL and Anon Key in your environment variables.
+## 🛡️ Neon Database Configuration
+This app uses **Neon.tech** for serverless storage. To set up your database:
+1. Create a project at [Neon](https://neon.tech).
+2. Run the SQL schema found in the app description to create the `profiles` and `daily_logs` tables.
+3. Provide the Connection String in your environment variables.
 
 ---
-*Built with React, Vite, Tailwind CSS, and Google Gemini.*
+*Built with React, Vite, Tailwind CSS, Neon DB, and Google Gemini.*

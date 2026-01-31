@@ -6,8 +6,9 @@ import { ScheduleEditor } from './ScheduleEditor';
 import { FamilyManagement } from './FamilyManagement';
 import { History } from './History';
 import { TestBed } from './TestBed';
+import { OnboardingTour } from './OnboardingTour';
 import { UserAccount, UserRole } from '../types';
-import { supabase, isCloudEnabled } from '../services/supabaseClient';
+import { isCloudEnabled } from '../services/neonClient';
 import { storageService } from '../services/storageService';
 
 const App: React.FC = () => {
@@ -15,6 +16,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'schedule' | 'family' | 'history'>('dashboard');
   const [toast, setToast] = useState<string | null>(null);
+  const [showTour, setShowTour] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -22,34 +24,24 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const initAuth = async () => {
-      if (isCloudEnabled && supabase) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const profile = await storageService.getUserProfile(session.user.id);
-          if (profile) setUser(profile);
+    const initApp = async () => {
+      const sessionUser = storageService.getSession();
+      if (sessionUser) {
+        // Refresh profile from cloud if possible
+        const profile = await storageService.getUserProfile(sessionUser.id);
+        if (profile) {
+          setUser(profile);
+          if (!profile.onboardingCompleted) {
+            setShowTour(true);
+          }
         }
       }
       setLoading(false);
     };
-
-    initAuth();
-
-    if (isCloudEnabled && supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          const profile = await storageService.getUserProfile(session.user.id);
-          setUser(profile);
-        } else {
-          setUser(null);
-        }
-      });
-      return () => subscription.unsubscribe();
-    }
+    initApp();
   }, []);
 
   const handleLogout = async () => {
-    if (isCloudEnabled && supabase) await supabase.auth.signOut();
     storageService.setSession(null);
     setUser(null);
   };
@@ -57,7 +49,19 @@ const App: React.FC = () => {
   const handleLoginSuccess = (loggedInUser: UserAccount) => {
     storageService.setSession(loggedInUser);
     setUser(loggedInUser);
+    if (!loggedInUser.onboardingCompleted) {
+      setShowTour(true);
+    }
     showToast(`Welcome back, Commander ${loggedInUser.name.split(' ')[0]}!`);
+  };
+
+  const completeOnboarding = async () => {
+    if (!user) return;
+    const updatedUser = { ...user, onboardingCompleted: true };
+    await storageService.saveUser(updatedUser);
+    setUser(updatedUser);
+    setShowTour(false);
+    showToast("System Orientation Complete 🚀");
   };
 
   if (loading) {
@@ -82,6 +86,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-32 md:pb-0 overflow-x-hidden">
+      {showTour && <OnboardingTour onComplete={completeOnboarding} />}
+      
       {toast && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[110] animate-in slide-in-from-top-4 duration-500">
           <div className="bg-slate-900 text-white px-8 py-4 rounded-[2rem] shadow-2xl border border-white/10 flex items-center gap-4">
@@ -100,7 +106,7 @@ const App: React.FC = () => {
               <div className="flex items-center gap-1 mt-1">
                 <div className={`w-1.5 h-1.5 rounded-full ${isCloudEnabled ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
                 <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
-                  {isCloudEnabled ? 'Cloud Sync Active' : 'Local Storage Mode'}
+                  {isCloudEnabled ? 'Neon Cloud Persist Active' : 'Local Storage Mode'}
                 </span>
               </div>
             </div>
@@ -117,7 +123,7 @@ const App: React.FC = () => {
 
       <main key={activeTab} className="max-w-6xl mx-auto px-6 pt-10 md:pt-36">
         {activeTab === 'dashboard' && <Dashboard user={user} onToast={showToast} />}
-        {activeTab === 'schedule' && <ScheduleEditor user={user} onUpdate={(u) => { setUser(u); showToast("Telemetry Synchronized!"); }} />}
+        {activeTab === 'schedule' && <ScheduleEditor user={user} onUpdate={(u) => { setUser(u); showToast("Blueprint saved!"); }} />}
         {activeTab === 'history' && <History user={user} />}
         {activeTab === 'family' && user.role === UserRole.PARENT && <FamilyManagement parent={user} />}
       </main>

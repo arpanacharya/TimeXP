@@ -113,13 +113,27 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     setIsSyncing(true);
     let updatedLog = { ...todayLog };
 
-    if (editingItem.status === 'LOGGED') {
-      updatedLog.actualActivities = todayLog.actualActivities.map(a => a.id === editingItem.id ? editingItem : a);
-    } else {
-      updatedLog.plannedSnapshot = todayLog.plannedSnapshot.map(p => p.id === editingItem.id ? editingItem : p);
-    }
+    // Determine if we are updating an existing entry or adding a brand new manual one
+    const isExistingActual = todayLog.actualActivities.some(a => a.id === editingItem.id);
+    const isExistingPlanned = todayLog.plannedSnapshot.some(p => p.id === editingItem.id);
 
     try {
+      if (isExistingActual) {
+        updatedLog.actualActivities = todayLog.actualActivities.map(a => a.id === editingItem.id ? editingItem : a);
+      } else if (isExistingPlanned) {
+        updatedLog.plannedSnapshot = todayLog.plannedSnapshot.map(p => p.id === editingItem.id ? editingItem : p);
+      } else {
+        // Brand new manual entry
+        const newItem = { ...editingItem, completed: true };
+        updatedLog.actualActivities = [...todayLog.actualActivities, newItem];
+        
+        // Award XP for spontaneous productivity
+        const newXp = (user.xp || 0) + 25;
+        await storageService.saveUser({ ...user, xp: newXp });
+        setXpFeedback({ amount: 25, reason: "Spontaneous Productivity" });
+        setTimeout(() => setXpFeedback(null), 2000);
+      }
+
       await storageService.saveDailyLog(updatedLog);
       setTodayLog(updatedLog);
       setEditingItem(null);
@@ -129,6 +143,24 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleNewManualEntry = () => {
+    const now = new Date();
+    const startH = now.getHours();
+    const endH = (startH + 1) % 24;
+    
+    const newItem: ScheduleItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      label: 'Spontaneous Mission',
+      startTime: `${String(startH).padStart(2, '0')}:00`,
+      endTime: `${String(endH).padStart(2, '0')}:00`,
+      category: ActivityCategory.OTHER,
+      completed: true,
+      notes: ''
+    };
+    
+    setEditingItem(newItem);
   };
 
   const deleteItem = async (itemId: string, status?: 'LOGGED' | 'PENDING') => {
@@ -196,7 +228,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     <div className="max-w-6xl mx-auto space-y-10 pb-32 fade-in">
       {/* XP Pop-up */}
       {xpFeedback && (
-        <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[80] xp-float">
+        <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[120] xp-float">
           <div className="bg-indigo-600 text-white px-10 py-5 rounded-[2rem] shadow-2xl border-2 border-indigo-400 flex flex-col items-center">
             <span className="text-3xl font-black">+{xpFeedback.amount} XP</span>
             <span className="text-[10px] uppercase font-black tracking-[0.3em] opacity-80 mt-1">{xpFeedback.reason}</span>
@@ -230,11 +262,17 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                   <input type="time" className="w-full p-5 bg-slate-50 rounded-[2rem] font-black text-xl outline-none" value={editingItem.endTime} onChange={e => setEditingItem({...editingItem, endTime: e.target.value})} />
                 </div>
               </div>
-              <div className="flex gap-4">
-                <button type="button" onClick={() => deleteItem(editingItem.id, editingItem.status)} className="p-6 bg-red-50 text-red-500 rounded-[2rem] hover:bg-red-500 hover:text-white transition active:scale-90">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mission Category</label>
+                <select className="w-full p-5 bg-slate-50 rounded-[2rem] font-black text-lg outline-none appearance-none cursor-pointer" value={editingItem.category} onChange={e => setEditingItem({...editingItem, category: e.target.value as ActivityCategory})}>
+                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button type="button" onClick={() => deleteItem(editingItem.id, (editingItem as any).status)} className="p-6 bg-red-50 text-red-500 rounded-[2rem] hover:bg-red-500 hover:text-white transition active:scale-90">
                   <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                 </button>
-                <button type="submit" className="flex-grow py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition">Update Flight Path 🚀</button>
+                <button type="submit" className="flex-grow py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition">Authorize Mission 🚀</button>
               </div>
             </form>
           </div>
@@ -282,17 +320,26 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
       {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 items-start">
         <section className="lg:col-span-2 space-y-10">
-          <div className="px-8 flex justify-between items-end">
+          <div className="px-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
             <div>
               <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Mission Timeline</h2>
               <p className="text-slate-400 text-[11px] font-black uppercase tracking-widest mt-2">Precision Sync: <span className={syncStatus > 80 ? "text-green-500" : "text-amber-500"}>{syncStatus}% Efficiency</span></p>
             </div>
-            {isSyncing && (
-              <div className="flex items-center gap-3 text-indigo-500 text-[11px] font-black uppercase animate-pulse bg-indigo-50 px-5 py-2.5 rounded-full border border-indigo-100">
-                <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
-                Relaying Telemetry
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              {isSyncing && (
+                <div className="flex items-center gap-3 text-indigo-500 text-[11px] font-black uppercase animate-pulse bg-indigo-50 px-5 py-2.5 rounded-full border border-indigo-100">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                  Syncing
+                </div>
+              )}
+              <button 
+                onClick={handleNewManualEntry}
+                className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-indigo-600 transition shadow-xl flex items-center gap-2 group"
+              >
+                <span className="text-xl group-hover:rotate-90 transition-transform duration-300">+</span>
+                Spontaneous Mission
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-[4rem] shadow-2xl border border-slate-100 overflow-hidden flex min-h-[960px] relative">
@@ -358,7 +405,9 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                           )}
                         </div>
                         <div className="flex gap-4 items-center">
-                          <span className="text-[10px] font-black uppercase bg-slate-900 text-white px-5 py-2 rounded-full tracking-widest">{item.category}</span>
+                          <span className={`text-[10px] font-black uppercase px-5 py-2 rounded-full tracking-widest ${!item.plannedId && isLogged ? 'bg-cyan-500 text-white' : 'bg-slate-900 text-white'}`}>
+                            {!item.plannedId && isLogged ? 'Spontaneous' : item.category}
+                          </span>
                           {item.plannedSubject && <span className="text-[10px] font-black uppercase text-indigo-500 tracking-[0.2em]">{item.plannedSubject} Sector</span>}
                         </div>
                       </div>
