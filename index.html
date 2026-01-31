@@ -1,0 +1,51 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
+  <title>TimeXP | The Gamified Student Productivity Command Center</title>
+  <meta name="description" content="Master your study schedule with TimeXP. Earn XP, level up your academic rank, and sync with your team.">
+
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/3069/3069186.png">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root { --indigo-primary: #4f46e5; --cyan-primary: #06b6d4; }
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; color: #0f172a; overflow-x: hidden; overscroll-behavior-y: contain; }
+    .fade-in { animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .xp-float { animation: floatUp 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; pointer-events: none; }
+    @keyframes floatUp { 0% { transform: translate(-50%, 0); opacity: 0; filter: blur(4px); } 15% { opacity: 1; filter: blur(0); } 100% { transform: translate(-50%, -100px); opacity: 0; } }
+    .mission-pulse { animation: pulseGlow 3s infinite; }
+    @keyframes pulseGlow { 0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(79, 70, 229, 0); } 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); } }
+    .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(0, 0, 0, 0.05); }
+    .blueprint-bg { background-image: radial-gradient(circle at 2px 2px, rgba(226, 232, 240, 0.6) 1px, transparent 0); background-size: 32px 32px; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 12px; }
+  </style>
+  
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@^19.2.4",
+      "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+      "react/": "https://esm.sh/react@^19.2.4/",
+      "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7"
+    }
+  }
+  </script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-slate-50 selection:bg-indigo-100">
+  <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

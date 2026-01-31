@@ -1,0 +1,12 @@
+
+{
+  "name": "TimeXP: Master Your Schedule",
+  "description": "A gamified time management app for students to track schedules, earn XP, and level up their productivity. Optimized for Cloud Deployment on Netlify.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "pwa": {
+    "themeColor": "#4f46e5",
+    "backgroundColor": "#f8fafc"
+  }
+}
