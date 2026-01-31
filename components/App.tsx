@@ -1,17 +1,17 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Auth } from './Auth';
 import { Dashboard } from './Dashboard';
 import { ScheduleEditor } from './ScheduleEditor';
 import { FamilyManagement } from './FamilyManagement';
 import { History } from './History';
 import { TestBed } from './TestBed';
-import { UserAccount, UserRole, ScheduleItem } from '../types';
-import { supabase } from '../services/supabaseClient';
+import { UserAccount, UserRole } from '../types';
+import { supabase, isCloudEnabled } from '../services/supabaseClient';
 import { storageService } from '../services/storageService';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<UserAccount | null>(null);
+  const [user, setUser] = useState<UserAccount | null>(storageService.getSession());
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'schedule' | 'family' | 'history'>('dashboard');
   const [toast, setToast] = useState<string | null>(null);
@@ -22,35 +22,51 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // Check active session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        storageService.getUserProfile(session.user.id).then(setUser);
+    const initAuth = async () => {
+      if (isCloudEnabled && supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const profile = await storageService.getUserProfile(session.user.id);
+          if (profile) setUser(profile);
+        }
       }
       setLoading(false);
-    });
+    };
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        storageService.getUserProfile(session.user.id).then(setUser);
-      } else {
-        setUser(null);
-      }
-    });
+    initAuth();
 
-    return () => subscription.unsubscribe();
+    if (isCloudEnabled && supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session?.user) {
+          const profile = await storageService.getUserProfile(session.user.id);
+          setUser(profile);
+        } else {
+          setUser(null);
+        }
+      });
+      return () => subscription.unsubscribe();
+    }
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    if (isCloudEnabled && supabase) await supabase.auth.signOut();
+    storageService.setSession(null);
     setUser(null);
+  };
+
+  const handleLoginSuccess = (loggedInUser: UserAccount) => {
+    storageService.setSession(loggedInUser);
+    setUser(loggedInUser);
+    showToast(`Welcome back, Commander ${loggedInUser.name.split(' ')[0]}!`);
   };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 blueprint-bg">
-        <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Booting Systems...</p>
+        </div>
       </div>
     );
   }
@@ -58,7 +74,8 @@ const App: React.FC = () => {
   if (!user) {
     return (
       <div className="min-h-screen bg-slate-50 py-10 blueprint-bg">
-        <Auth onLogin={setUser} />
+        <Auth onLogin={handleLoginSuccess} />
+        <TestBed />
       </div>
     );
   }
@@ -78,9 +95,21 @@ const App: React.FC = () => {
         <div className="max-w-6xl mx-auto px-8 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-4 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-xl group-hover:rotate-12 transition duration-300">XP</div>
-            <span className="text-2xl font-black text-slate-900 tracking-tighter">TimeXP</span>
+            <div className="flex flex-col">
+              <span className="text-2xl font-black text-slate-900 tracking-tighter leading-none">TimeXP</span>
+              <div className="flex items-center gap-1 mt-1">
+                <div className={`w-1.5 h-1.5 rounded-full ${isCloudEnabled ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`}></div>
+                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">
+                  {isCloudEnabled ? 'Cloud Sync Active' : 'Local Storage Mode'}
+                </span>
+              </div>
+            </div>
           </div>
           <div className="flex space-x-10 items-center">
+            <div className="text-right">
+              <p className="text-[10px] font-black text-slate-900 uppercase leading-none">{user.name}</p>
+              <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest mt-1">LVL {Math.floor(user.xp / 1000) + 1} Specialist</p>
+            </div>
             <button onClick={handleLogout} className="text-[10px] font-black text-red-400 uppercase tracking-widest hover:text-red-600 transition">Logout</button>
           </div>
         </div>
@@ -88,7 +117,7 @@ const App: React.FC = () => {
 
       <main key={activeTab} className="max-w-6xl mx-auto px-6 pt-10 md:pt-36">
         {activeTab === 'dashboard' && <Dashboard user={user} onToast={showToast} />}
-        {activeTab === 'schedule' && <ScheduleEditor user={user} onUpdate={(u) => { setUser(u); showToast("Database Sync Success!"); }} />}
+        {activeTab === 'schedule' && <ScheduleEditor user={user} onUpdate={(u) => { setUser(u); showToast("Telemetry Synchronized!"); }} />}
         {activeTab === 'history' && <History user={user} />}
         {activeTab === 'family' && user.role === UserRole.PARENT && <FamilyManagement parent={user} />}
       </main>
@@ -107,6 +136,7 @@ const App: React.FC = () => {
           <button onClick={handleLogout} className="md:hidden p-5 text-red-500"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg></button>
         </div>
       </div>
+      <TestBed />
     </div>
   );
 };

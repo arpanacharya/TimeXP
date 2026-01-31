@@ -13,7 +13,8 @@ export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): 
     return "Mission Control is currently offline. Follow your standard protocols and stay consistent, Commander!";
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  // Fix: Always use the process.env.API_KEY string directly when initializing the client
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const scheduleSummary = Object.entries(schedule)
     .filter(([_, items]) => items.length > 0)
@@ -35,10 +36,12 @@ export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): 
 
   for (let i = 0; i <= retries; i++) {
     try {
+      // Fix: Use ai.models.generateContent to query the model with the prompt
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
+      // Fix: Access the text output via the .text property (not a method)
       return response.text?.trim() || "Optimal trajectory achieved. Proceed with mission.";
     } catch (error) {
       if (i === retries) {

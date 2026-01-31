@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { UserAccount, UserRole, GradeLevel, DailyLog } from '../types';
-import { supabase } from '../services/supabaseClient';
+import { UserAccount, UserRole, GradeLevel } from '../types';
+import { supabase, isCloudEnabled } from '../services/supabaseClient';
 import { storageService } from '../services/storageService';
 import { GRADE_TEMPLATES } from '../services/demoData';
 
@@ -18,7 +18,7 @@ const GRADE_INFO = [
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState(''); // Use email for Supabase
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.STUDENT);
@@ -33,39 +33,58 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setIsLoading(true);
 
     try {
-      if (isLogin) {
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (authError) throw authError;
-
-        if (data.user) {
-          const profile = await storageService.getUserProfile(data.user.id);
-          if (profile) onLogin(profile);
+      if (isCloudEnabled && supabase) {
+        // Cloud Auth Path
+        if (isLogin) {
+          const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+          if (authError) throw authError;
+          if (data.user) {
+            const profile = await storageService.getUserProfile(data.user.id);
+            if (profile) onLogin(profile);
+            else throw new Error("Profile synchronization failed.");
+          }
+        } else {
+          const { data, error: authError } = await supabase.auth.signUp({ email, password });
+          if (authError) throw authError;
+          if (data.user) {
+            const template = GRADE_TEMPLATES[grade](specificGrade);
+            const newUser: UserAccount = {
+              id: data.user.id,
+              userId: email.split('@')[0],
+              name: name || email.split('@')[0],
+              phone: '',
+              passwordHash: '',
+              role,
+              grade: role === UserRole.STUDENT ? grade : undefined,
+              specificGrade: role === UserRole.STUDENT ? specificGrade : undefined,
+              weeklySchedule: template.schedule,
+              xp: template.xp,
+            };
+            await storageService.saveUser(newUser);
+            onLogin(newUser);
+          }
         }
       } else {
-        const { data, error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (authError) throw authError;
-
-        if (data.user) {
+        // Local Auth Path (Simulation)
+        const users = await storageService.getUsers();
+        if (isLogin) {
+          const found = users.find(u => u.userId === email.split('@')[0]);
+          if (found) onLogin(found);
+          else throw new Error("Specialist not found in local records. Try Enrolling!");
+        } else {
           const template = GRADE_TEMPLATES[grade](specificGrade);
           const newUser: UserAccount = {
-            id: data.user.id,
+            id: Math.random().toString(36).substr(2, 9),
             userId: email.split('@')[0],
             name: name || email.split('@')[0],
             phone: '',
-            passwordHash: '', // Handled by Supabase Auth
+            passwordHash: storageService.encryptPassword(password),
             role,
             grade: role === UserRole.STUDENT ? grade : undefined,
             specificGrade: role === UserRole.STUDENT ? specificGrade : undefined,
             weeklySchedule: template.schedule,
             xp: template.xp,
           };
-          
           await storageService.saveUser(newUser);
           onLogin(newUser);
         }
@@ -83,15 +102,23 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     <div className="max-w-xl mx-auto mt-10 p-12 bg-white rounded-[3.5rem] shadow-2xl relative border border-slate-100 mb-20 overflow-hidden fade-in">
       <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-cyan-400 to-purple-500"></div>
       
+      {!isCloudEnabled && (
+        <div className="absolute top-4 right-8 bg-amber-50 text-amber-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border border-amber-100">
+          Local Storage Enabled
+        </div>
+      )}
+
       <div className="text-center mb-12">
         <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] mx-auto mb-8 flex items-center justify-center text-white font-black text-4xl shadow-2xl rotate-3">XP</div>
         <h1 className="text-5xl font-black text-slate-900 mb-3 tracking-tighter">TimeXP</h1>
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Cloud Connected Student Command</p>
+        <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+          {isCloudEnabled ? 'Cloud Connected Student Command' : 'Local Sandbox Environment'}
+        </p>
       </div>
       
       <form onSubmit={handleAuth} className="space-y-6">
         <div className="grid grid-cols-1 gap-4">
-          <input required type="email" className="w-full p-5 border-2 border-slate-50 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold" value={email} onChange={e => setEmail(e.target.value)} placeholder="Academy Email" />
+          <input required type="text" className="w-full p-5 border-2 border-slate-50 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold" value={email} onChange={e => setEmail(e.target.value)} placeholder="Username / Email" />
           <input required type="password" className="w-full p-5 border-2 border-slate-50 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold" value={password} onChange={e => setPassword(e.target.value)} placeholder="Security Key" />
         </div>
 
@@ -106,19 +133,11 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 </button>
               ))}
             </div>
-            <div className="bg-slate-900 p-8 rounded-[3rem] text-white">
-              <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-6 text-center">Specific Deployment Year</label>
-              <div className="flex items-center justify-center gap-10">
-                 <button type="button" onClick={() => setSpecificGrade(Math.max(selectedLevelInfo?.range[0] || 1, specificGrade - 1))} className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center font-black">-</button>
-                 <span className="text-5xl font-black">{specificGrade}</span>
-                 <button type="button" onClick={() => setSpecificGrade(Math.min(selectedLevelInfo?.range[1] || 12, specificGrade + 1))} className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center font-black">+</button>
-              </div>
-            </div>
           </div>
         )}
 
         <button disabled={isLoading} className="w-full bg-indigo-600 text-white py-6 rounded-[2.5rem] font-black text-xl hover:bg-indigo-700 transition shadow-2xl uppercase tracking-[0.2em]">
-          {isLoading ? 'Syncing...' : isLogin ? 'Initialize Command 🌐' : 'Enroll in Squad ✨'}
+          {isLoading ? 'Processing...' : isLogin ? 'Initialize Station 🌐' : 'Enroll in Squad ✨'}
         </button>
       </form>
 
