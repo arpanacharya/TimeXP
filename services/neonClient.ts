@@ -6,14 +6,18 @@ import { neon } from '@neondatabase/serverless';
  * Resolves the database URL from the environment injected during the build process.
  */
 const getDatabaseUrl = () => {
-  const url = process.env.NEON_DATABASE_URL;
-  
-  // Handle cases where build tools might inject the literal string "undefined"
-  if (!url || url === 'undefined' || url === 'null' || url === '') {
+  try {
+    const url = typeof process !== 'undefined' ? process.env.NEON_DATABASE_URL : undefined;
+    
+    // Handle cases where build tools might inject the literal string "undefined"
+    if (!url || url === 'undefined' || url === 'null' || url === '') {
+      return null;
+    }
+    
+    return url;
+  } catch (e) {
     return null;
   }
-  
-  return url;
 };
 
 const databaseUrl = getDatabaseUrl();

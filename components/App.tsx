@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Auth } from './components/Auth';
-import { Dashboard } from './components/Dashboard';
-import { ScheduleEditor } from './components/ScheduleEditor';
-import { FamilyManagement } from './components/FamilyManagement';
-import { History } from './components/History';
-import { TestBed } from './components/TestBed';
-import { OnboardingTour } from './components/OnboardingTour';
-import { UserAccount, UserRole, ScheduleItem } from '../types';
-import { storageService } from '../services/storageService';
-import { isCloudEnabled } from '../services/neonClient';
+import { Auth } from './Auth.tsx';
+import { Dashboard } from './Dashboard.tsx';
+import { ScheduleEditor } from './ScheduleEditor.tsx';
+import { FamilyManagement } from './FamilyManagement.tsx';
+import { History } from './History.tsx';
+import { TestBed } from './TestBed.tsx';
+import { OnboardingTour } from './OnboardingTour.tsx';
+import { UserAccount, UserRole, ScheduleItem } from '../types.ts';
+import { storageService } from '../services/storageService.ts';
+import { isCloudEnabled } from '../services/neonClient.ts';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserAccount | null>(storageService.getSession());
@@ -36,12 +36,12 @@ const App: React.FC = () => {
       }
 
       try {
-        // Automatically ensure tables exist
+        // Automatically ensure tables exist on the current Neon instance
         await storageService.initializeDatabase();
         
         if (user) {
           const users = await storageService.getUsers();
-          const stillExists = users.find(u => u.id === user.id);
+          const stillExists = users.find((u: UserAccount) => u.id === user.id);
           if (!stillExists) {
             handleLogout();
           } else {
@@ -171,7 +171,7 @@ const App: React.FC = () => {
 
       <main className="max-w-6xl mx-auto px-6 pt-10 md:pt-32">
         {activeTab === 'dashboard' && <Dashboard user={user} onToast={showToast} />}
-        {activeTab === 'schedule' && <ScheduleEditor user={user} onUpdate={(u) => { setUser(u); showToast("Strategy Updated! 📡"); }} />}
+        {activeTab === 'schedule' && <ScheduleEditor user={user} onUpdate={(u: UserAccount) => { setUser(u); showToast("Strategy Updated! 📡"); }} />}
         {activeTab === 'family' && user.role === UserRole.PARENT && <FamilyManagement parent={user} />}
         {activeTab === 'history' && <History user={user} />}
       </main>

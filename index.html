@@ -30,16 +30,23 @@
     .custom-scroll::-webkit-scrollbar { width: 6px; }
     .custom-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 12px; }
   </style>
+
+  <script>
+    // Shim for environments where process.env is not defined by the bundler/runner
+    window.process = window.process || { env: {} };
+  </script>
+
 <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.4",
+    "react-dom": "https://esm.sh/react-dom@^19.2.4",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
     "react/": "https://esm.sh/react@^19.2.4/",
     "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
-    "vite": "https://esm.sh/vite@^7.3.1",
+    "@neondatabase/serverless": "https://esm.sh/@neondatabase/serverless@0.10.4",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "@neondatabase/serverless": "https://esm.sh/@neondatabase/serverless@^1.0.2"
+    "vite": "https://esm.sh/vite@^7.3.1"
   }
 }
 </script>
