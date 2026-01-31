@@ -1,20 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Auth } from './Auth';
-import { Dashboard } from './Dashboard';
-import { ScheduleEditor } from './ScheduleEditor';
-import { FamilyManagement } from './FamilyManagement';
-import { History } from './History';
-import { TestBed } from './TestBed';
-import { OnboardingTour } from './OnboardingTour';
+import { Auth } from './components/Auth';
+import { Dashboard } from './components/Dashboard';
+import { ScheduleEditor } from './components/ScheduleEditor';
+import { FamilyManagement } from './components/FamilyManagement';
+import { History } from './components/History';
+import { TestBed } from './components/TestBed';
+import { OnboardingTour } from './components/OnboardingTour';
 import { UserAccount, UserRole, ScheduleItem } from '../types';
 import { storageService } from '../services/storageService';
+import { isCloudEnabled } from '../services/neonClient';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<UserAccount | null>(storageService.getSession());
   const [activeTab, setActiveTab] = useState<'dashboard' | 'schedule' | 'family' | 'history'>('dashboard');
   const [toast, setToast] = useState<string | null>(null);
-  const [isValidating, setIsValidating] = useState(!!user);
+  const [isValidating, setIsValidating] = useState(true);
   const notifiedRefs = useRef<Set<string>>(new Set());
 
   const showToast = (msg: string) => {
@@ -27,32 +28,35 @@ const App: React.FC = () => {
     setUser(null);
   };
 
-  // Validate session on mount and sync with DB
   useEffect(() => {
-    const validate = async () => {
-      if (!user) {
+    const startup = async () => {
+      if (!isCloudEnabled) {
         setIsValidating(false);
         return;
       }
+
       try {
-        const users = await storageService.getUsers();
-        const stillExists = users.find(u => u.id === user.id);
-        if (!stillExists) {
-          console.warn("Session user no longer exists. Redirecting to Auth.");
-          handleLogout();
-        } else {
-          setUser(stillExists);
+        // Automatically ensure tables exist
+        await storageService.initializeDatabase();
+        
+        if (user) {
+          const users = await storageService.getUsers();
+          const stillExists = users.find(u => u.id === user.id);
+          if (!stillExists) {
+            handleLogout();
+          } else {
+            setUser(stillExists);
+          }
         }
       } catch (err) {
-        console.error("Session validation failed", err);
+        console.error("Mission Control Initialization Failed:", err);
       } finally {
         setIsValidating(false);
       }
     };
-    validate();
+    startup();
   }, []);
 
-  // Mission Reminders Logic
   useEffect(() => {
     if (!user || user.role !== UserRole.STUDENT) return;
     
@@ -77,8 +81,6 @@ const App: React.FC = () => {
                 icon: 'https://cdn-icons-png.flaticon.com/512/3069/3069186.png'
               });
               notifiedRefs.current.add(notificationId);
-            } else if (Notification.permission !== 'denied') {
-              Notification.requestPermission();
             }
           }
         }
@@ -92,7 +94,7 @@ const App: React.FC = () => {
   const login = (u: UserAccount) => {
     storageService.setSession(u);
     setUser(u);
-    showToast(`Welcome, Specialist ${u.name.split(' ')[0]}!`);
+    showToast(`Welcome back, Specialist ${u.name.split(' ')[0]}!`);
   };
 
   if (isValidating) return (
@@ -103,6 +105,27 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+
+  if (!isCloudEnabled) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
+        <div className="max-w-md space-y-8 fade-in">
+          <div className="text-8xl">📡</div>
+          <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Connection Lost</h1>
+          <div className="bg-slate-800 p-8 rounded-[2.5rem] border border-slate-700 space-y-4">
+            <p className="text-slate-400 font-bold text-sm leading-relaxed">
+              Mission Control cannot find the <code className="text-indigo-400">NEON_DATABASE_URL</code> in the environment.
+            </p>
+            <p className="text-slate-500 text-xs italic">
+              1. Add your database URL to Netlify Site Settings.<br/>
+              2. Trigger a new Production Deploy.
+            </p>
+          </div>
+          <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700 transition">Retry Link 🔄</button>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) return (
     <div className="min-h-screen bg-slate-50 py-20 blueprint-bg">
