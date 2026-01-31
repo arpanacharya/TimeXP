@@ -22,6 +22,7 @@ export const storageService = {
           weeklySchedule: d.weekly_schedule,
           xp: d.xp || 0,
           grade: d.grade,
+          passwordHash: d.password_hash, // Ensure passwordHash is included if present in DB
           onboardingCompleted: d.onboarding_completed
         })) as UserAccount[];
       } catch (e) { console.error("Neon Fetch Error:", e); }
@@ -38,10 +39,13 @@ export const storageService = {
     if (isCloudEnabled && sql) {
       try {
         await sql`
-          INSERT INTO profiles (id, user_id, name, role, parent_id, grade, weekly_schedule, xp, onboarding_completed, updated_at)
-          VALUES (${user.id}, ${user.userId}, ${user.name}, ${user.role}, ${user.parentId || null}, ${user.grade || null}, ${JSON.stringify(user.weeklySchedule)}, ${user.xp}, ${user.onboardingCompleted || false}, NOW())
+          INSERT INTO profiles (id, user_id, name, role, parent_id, grade, weekly_schedule, xp, onboarding_completed, password_hash, updated_at)
+          VALUES (${user.id}, ${user.userId}, ${user.name}, ${user.role}, ${user.parentId || null}, ${user.grade || null}, ${JSON.stringify(user.weeklySchedule)}, ${user.xp}, ${user.onboardingCompleted || false}, ${user.passwordHash}, NOW())
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
+            user_id = EXCLUDED.user_id,
+            password_hash = EXCLUDED.password_hash,
+            grade = EXCLUDED.grade,
             weekly_schedule = EXCLUDED.weekly_schedule,
             xp = EXCLUDED.xp,
             onboarding_completed = EXCLUDED.onboarding_completed,
@@ -54,6 +58,22 @@ export const storageService = {
     if (idx > -1) users[idx] = user; else users.push(user);
     localStorage.setItem(KEYS.USERS, JSON.stringify(users));
     if (storageService.getSession()?.id === user.id) storageService.setSession(user);
+  },
+
+  deleteUser: async (id: string): Promise<void> => {
+    if (isCloudEnabled && sql) {
+      try {
+        await sql`DELETE FROM profiles WHERE id = ${id}`;
+        await sql`DELETE FROM daily_logs WHERE user_id = ${id}`;
+      } catch (e) { console.warn("Neon Delete Error:", e); }
+    }
+    const users = await storageService.getUsers();
+    const filteredUsers = users.filter(u => u.id !== id);
+    localStorage.setItem(KEYS.USERS, JSON.stringify(filteredUsers));
+    
+    const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
+    const filteredLogs = logs.filter((l: DailyLog) => l.userId !== id);
+    localStorage.setItem(KEYS.LOGS, JSON.stringify(filteredLogs));
   },
 
   getDailyLogs: async (userId: string): Promise<DailyLog[]> => {
@@ -88,6 +108,7 @@ export const storageService = {
   },
 
   encryptPassword: (p: string) => btoa(p),
+  decryptPassword: (p: string) => atob(p),
   setSession: (u: UserAccount | null) => u ? localStorage.setItem(KEYS.SESSION, JSON.stringify(u)) : localStorage.removeItem(KEYS.SESSION),
   getSession: (): UserAccount | null => {
     const s = localStorage.getItem(KEYS.SESSION);
