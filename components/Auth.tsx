@@ -26,10 +26,18 @@ export const Auth: React.FC<Props> = ({ onLogin }) => {
     try {
       const users = await storageService.getUsers();
       const userId = formData.id.toLowerCase().trim();
+      const hashedPass = storageService.encryptPassword(formData.pass);
       
       if (isLogin) {
         const found = users.find(u => u.userId === userId);
-        if (found) onLogin(found);
+        if (found) {
+          // VERIFY PASSWORD HASH
+          if (found.passwordHash === hashedPass) {
+            onLogin(found);
+          } else {
+            throw new Error("Invalid access key (password).");
+          }
+        }
         else throw new Error("Personnel record not found.");
       } else {
         if (users.some(u => u.userId === userId)) throw new Error("ID already taken.");
@@ -38,7 +46,7 @@ export const Auth: React.FC<Props> = ({ onLogin }) => {
           id: Math.random().toString(36).substr(2, 9),
           userId,
           name: formData.name,
-          passwordHash: storageService.encryptPassword(formData.pass),
+          passwordHash: hashedPass,
           role,
           grade: role === UserRole.STUDENT ? grade : undefined,
           weeklySchedule: template.schedule as any,

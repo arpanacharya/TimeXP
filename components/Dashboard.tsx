@@ -47,10 +47,12 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
           setActiveUser(mySquad[0]);
         }
       });
+    } else {
+      setActiveUser(user);
     }
-  }, [user.id, isParentView]);
+  }, [user, isParentView]);
 
-  const initDashboard = async (forceSync = false) => {
+  const initDashboard = async () => {
     if (activeUser.role === UserRole.PARENT && children.length === 0) return;
     
     setIsSyncing(true);
@@ -58,20 +60,13 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
       const logs = await storageService.getDailyLogs(activeUser.id);
       let log = logs.find(l => l.date === dateStr);
       
-      if (!log || forceSync) {
-        const plannedItems = (activeUser.weeklySchedule?.[todayName] || []).map(item => ({ 
-          ...item, 
-          id: Math.random().toString(36).substr(2, 9) 
-        }));
-        
-        const existingActivities = log?.actualActivities || [];
-        
+      if (!log) {
         log = {
-          id: log?.id || Math.random().toString(36).substr(2, 9),
+          id: Math.random().toString(36).substr(2, 9),
           userId: activeUser.id,
           date: dateStr,
-          actualActivities: existingActivities,
-          plannedSnapshot: plannedItems
+          actualActivities: [],
+          plannedSnapshot: activeUser.weeklySchedule?.[todayName] || []
         };
         await storageService.saveDailyLog(log);
       }
@@ -92,27 +87,32 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
 
   useEffect(() => {
     initDashboard();
-  }, [activeUser.id, activeUser.weeklySchedule, todayName, dateStr, children.length]);
+  }, [activeUser.id, todayName, dateStr, children.length]);
 
   const unifiedTimeline = useMemo(() => {
     if (!todayLog) return [];
+    
+    // IMPORTANT: Use the LIVE weekly schedule for immediate visibility on front page
+    const livePlannedSlots = activeUser.weeklySchedule?.[todayName] || [];
+    
     const loggedMap = new Map<string, ScheduleItem>();
     todayLog.actualActivities.forEach(a => { if (a.plannedId) loggedMap.set(a.plannedId, a); });
 
-    const slots = (todayLog.plannedSnapshot || []).map(p => {
+    const slots = livePlannedSlots.map(p => {
       const actual = loggedMap.get(p.id);
       return actual ? { ...actual, status: 'LOGGED' as const } : { ...p, status: 'PENDING' as const };
     });
 
     const extras = (todayLog.actualActivities || []).filter(a => !a.plannedId).map(a => ({ ...a, status: 'LOGGED' as const }));
     return [...slots, ...extras].sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'));
-  }, [todayLog]);
+  }, [todayLog, activeUser.weeklySchedule, todayName]);
 
   const syncStatus = useMemo(() => {
-    if (!todayLog || !todayLog.plannedSnapshot || todayLog.plannedSnapshot.length === 0) return 100;
+    const livePlanned = activeUser.weeklySchedule?.[todayName] || [];
+    if (!todayLog || livePlanned.length === 0) return 100;
     const syncedCount = todayLog.actualActivities.filter(a => !!a.plannedId).length;
-    return Math.round((syncedCount / todayLog.plannedSnapshot.length) * 100);
-  }, [todayLog]);
+    return Math.min(100, Math.round((syncedCount / livePlanned.length) * 100));
+  }, [todayLog, activeUser.weeklySchedule, todayName]);
 
   const handleUpdateItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,9 +249,8 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
           <div className="flex justify-between items-center px-6">
             <h2 className="text-3xl font-black tracking-tighter uppercase text-slate-900">Today's Timeline</h2>
             <div className="flex gap-3">
-              <button onClick={() => initDashboard(true)} className="bg-slate-100 text-slate-600 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition shadow-sm">Sync Plan</button>
               {!isParentView && (
-                <button onClick={handleNewManualEntry} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition shadow-xl">+ Log Entry</button>
+                <button onClick={handleNewManualEntry} className="bg-indigo-600 text-white px-8 py-4 rounded-[2rem] text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 transition shadow-xl">+ Log New Activity</button>
               )}
             </div>
           </div>
@@ -269,8 +268,8 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
             {/* Timeline Content */}
             <div className="flex-grow relative blueprint-bg overflow-y-auto max-h-[700px] scrollbar-hide px-6 py-4" ref={timelineRef}>
               <div className="sticky top-0 right-0 flex justify-end pb-4 z-20">
-                <button onClick={() => setIsFullDay(!isFullDay)} className="bg-white/80 backdrop-blur px-4 py-2 rounded-full border border-slate-200 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 shadow-sm hover:bg-white transition-all">
-                  {isFullDay ? "Hide Night Cycles" : "Show Full 24H"}
+                <button onClick={() => setIsFullDay(!isFullDay)} className="bg-white/80 backdrop-blur px-5 py-2.5 rounded-full border border-slate-200 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 shadow-sm hover:bg-white transition-all">
+                  {isFullDay ? "Focus Core Hours (6-11)" : "Unlock 24H Grid"}
                 </button>
               </div>
 
@@ -282,7 +281,6 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                 const eH = parseInt(item.endTime.split(':')[0]);
                 const eM = parseInt(item.endTime.split(':')[1]);
 
-                // Filter items outside display range if not in 24h mode
                 if (!isFullDay && (sH < 6 || sH >= 24)) return null;
 
                 const offsetH = isFullDay ? 0 : 6;
@@ -312,7 +310,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
                          </div>
                       ) : (
-                        !isParentView && <button onClick={(e) => { e.stopPropagation(); activateMission(item); }} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition shrink-0">COMPLETE</button>
+                        !isParentView && <button onClick={(e) => { e.stopPropagation(); activateMission(item); }} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition shrink-0">VERIFY</button>
                       )}
                     </div>
                   </div>
@@ -362,7 +360,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setEditingItem(null)}></div>
           <div className="bg-white w-full max-w-lg rounded-[3.5rem] shadow-2xl p-12 relative animate-in zoom-in-95 scrollbar-hide max-h-[90vh] overflow-y-auto">
-             <h3 className="text-3xl font-black mb-8 uppercase tracking-tighter text-slate-900">Mission Debrief</h3>
+             <h3 className="text-3xl font-black mb-8 uppercase tracking-tighter text-slate-900">Activity Debrief</h3>
              <form onSubmit={handleUpdateItem} className="space-y-6">
                <div className="space-y-2">
                  <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Activity Name</label>
@@ -386,11 +384,11 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                </div>
 
                <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Progress Notes</label>
-                 <textarea rows={3} className="w-full p-6 bg-slate-50 rounded-[2rem] font-medium text-slate-600 outline-none border-4 border-transparent focus:border-indigo-100 resize-none" value={editingItem.notes || ''} onChange={e => setEditingItem({...editingItem, notes: e.target.value})} placeholder="What did you achieve during this time?" />
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Mission Notes</label>
+                 <textarea rows={3} className="w-full p-6 bg-slate-50 rounded-[2rem] font-medium text-slate-600 outline-none border-4 border-transparent focus:border-indigo-100 resize-none" value={editingItem.notes || ''} onChange={e => setEditingItem({...editingItem, notes: e.target.value})} placeholder="What did you achieve or learn?" />
                </div>
 
-               <button className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition">Commit to History</button>
+               <button className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition">Update Record</button>
              </form>
           </div>
         </div>
