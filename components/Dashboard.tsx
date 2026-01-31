@@ -30,6 +30,17 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
 
   const isParentView = user.role === UserRole.PARENT;
+  
+  // Format the date for the UI
+  const formattedDate = useMemo(() => {
+    return currentTime.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+  }, [currentTime]);
+
   const todayName = useMemo(() => currentTime.toLocaleDateString('en-US', { weekday: 'long' }), [currentTime]);
   const dateStr = useMemo(() => currentTime.toISOString().split('T')[0], [currentTime]);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -64,8 +75,9 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
       let log = logs.find(l => l.date === dateStr);
       
       if (!log) {
+        // Create initial log tied strictly to the current date
         log = {
-          id: Math.random().toString(36).substr(2, 9),
+          id: `log-${activeUser.id}-${dateStr}`,
           userId: activeUser.id,
           date: dateStr,
           actualActivities: [],
@@ -96,12 +108,15 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
   const unifiedTimeline = useMemo(() => {
     if (!todayLog) return [];
     
-    const livePlannedSlots = activeUser.weeklySchedule?.[todayName] || [];
+    // We use the plannedSnapshot from the log if it exists (ensuring we are tied to what was planned for this specific date)
+    const plannedSlots = todayLog.plannedSnapshot.length > 0 
+      ? todayLog.plannedSnapshot 
+      : (activeUser.weeklySchedule?.[todayName] || []);
     
     const loggedMap = new Map<string, ScheduleItem>();
     todayLog.actualActivities.forEach(a => { if (a.plannedId) loggedMap.set(a.plannedId, a); });
 
-    const slots = livePlannedSlots.map(p => {
+    const slots = plannedSlots.map(p => {
       const actual = loggedMap.get(p.id);
       return actual ? { ...actual, status: 'LOGGED' as const } : { ...p, status: 'PENDING' as const };
     });
@@ -111,10 +126,10 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
   }, [todayLog, activeUser.weeklySchedule, todayName]);
 
   const syncStatus = useMemo(() => {
-    const livePlanned = activeUser.weeklySchedule?.[todayName] || [];
-    if (!todayLog || livePlanned.length === 0) return 100;
+    const planned = todayLog?.plannedSnapshot || activeUser.weeklySchedule?.[todayName] || [];
+    if (!todayLog || planned.length === 0) return 100;
     const syncedCount = todayLog.actualActivities.filter(a => !!a.plannedId).length;
-    return Math.min(100, Math.round((syncedCount / livePlanned.length) * 100));
+    return Math.min(100, Math.round((syncedCount / planned.length) * 100));
   }, [todayLog, activeUser.weeklySchedule, todayName]);
 
   const weeklyStats = useMemo(() => {
@@ -133,7 +148,6 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
       } else if (ds === dateStr) {
         score = syncStatus;
       } else {
-        // If no log exists or no snapshot, adherence is 100% (nothing failed)
         score = 100;
       }
       stats.push({ day: dayLabel, score, isToday: ds === dateStr });
@@ -165,7 +179,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
 
       await storageService.saveDailyLog(updatedLog);
       setTodayLog(updatedLog);
-      setAllLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l));
+      setAllLogs(prev => prev.map(l => l.date === updatedLog.date ? updatedLog : l));
       
       setEditingItem(null);
       onToast("Operation Logged 📡");
@@ -208,7 +222,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     try {
       await storageService.saveDailyLog(updatedLog);
       setTodayLog(updatedLog);
-      setAllLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l));
+      setAllLogs(prev => prev.map(l => l.date === updatedLog.date ? updatedLog : l));
 
       const newXp = (activeUser.xp || 0) + 50;
       const updatedUser = { ...activeUser, xp: newXp };
@@ -250,23 +264,27 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         </div>
       )}
 
+      {/* Prominent Header with Date Display */}
       <header className="bg-slate-900 rounded-[3.5rem] p-10 md:p-14 shadow-2xl text-white relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -mr-20 -mt-20"></div>
         <div className="relative z-10 flex flex-col md:flex-row items-center gap-10">
-          <div className="w-28 h-28 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center text-6xl shadow-2xl rotate-3 border-4 border-white/10">
+          <div className="w-28 h-28 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center text-6xl shadow-2xl rotate-3 border-4 border-white/10 shrink-0">
             {activeUser.grade ? GRADE_AVATARS[activeUser.grade] : '👤'}
           </div>
-          <div className="text-center md:text-left space-y-4">
-            <h1 className="text-5xl font-black tracking-tighter mb-2">{activeUser.name}</h1>
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-              <span className="bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em]">Rank: Level {level}</span>
-              <span className="bg-white/10 text-slate-300 px-5 py-2 rounded-full text-[11px] font-black uppercase tracking-[0.2em]">{activeUser.grade || 'Academy'} Mode</span>
+          <div className="text-center md:text-left space-y-2 flex-grow">
+            <h1 className="text-5xl font-black tracking-tighter mb-1">{activeUser.name}</h1>
+            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mb-4">
+              <p className="text-indigo-400 font-black text-lg uppercase tracking-tight">{formattedDate}</p>
+              <div className="flex gap-2 justify-center md:justify-start">
+                <span className="bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">Lvl {level}</span>
+                <span className="bg-white/10 text-slate-300 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">Academy Rank</span>
+              </div>
             </div>
           </div>
-          <div className="md:ml-auto max-w-sm text-center md:text-right bg-white/5 p-6 rounded-[2.5rem] border border-white/10">
-            <p className="text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em] mb-3">Tactical Intelligence</p>
-            <p className="text-slate-300 text-sm italic font-medium leading-relaxed">
-              {isAdviceLoading ? "Decoding satellite data..." : advice || "Awaiting mission parameters from Command."}
+          <div className="md:ml-auto max-w-xs text-center md:text-right bg-white/5 p-6 rounded-[2.5rem] border border-white/10 hidden lg:block">
+            <p className="text-indigo-400 font-black text-[9px] uppercase tracking-[0.3em] mb-2">Tactical Intelligence</p>
+            <p className="text-slate-300 text-xs italic font-medium leading-relaxed">
+              {isAdviceLoading ? "Decoding..." : advice || "Stay on mission trajectory."}
             </p>
           </div>
         </div>
@@ -275,9 +293,13 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <section className="lg:col-span-2 space-y-6">
           <div className="flex justify-between items-center px-6">
-            <h2 className="text-3xl font-black tracking-tighter uppercase text-slate-900">Today's Timeline</h2>
+            <div className="flex items-center gap-4">
+               <h2 className="text-3xl font-black tracking-tighter uppercase text-slate-900">Mission Hub</h2>
+               <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
+               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">Active Strategy: {todayName}</p>
+            </div>
             {!isParentView && (
-              <button onClick={handleNewManualEntry} className="bg-indigo-600 text-white px-8 py-4 rounded-[2rem] text-[11px] font-black uppercase tracking-widest hover:bg-indigo-700 transition shadow-xl">+ Log Activity</button>
+              <button onClick={handleNewManualEntry} className="bg-indigo-600 text-white px-8 py-4 rounded-[2rem] text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition shadow-xl">+ Log Activity</button>
             )}
           </div>
 
@@ -293,7 +315,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
             <div className="flex-grow relative blueprint-bg overflow-y-auto max-h-[700px] scrollbar-hide px-6 py-4" ref={timelineRef}>
               <div className="sticky top-0 right-0 flex justify-end pb-4 z-20">
                 <button onClick={() => setIsFullDay(!isFullDay)} className="glass px-5 py-2.5 rounded-full text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 shadow-sm hover:bg-white transition-all">
-                  {isFullDay ? "Focus Core Hours" : "Unlock 24H Grid"}
+                  {isFullDay ? "Focus View" : "Full Ops Grid"}
                 </button>
               </div>
 
@@ -317,7 +339,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                   <div 
                     key={item.id}
                     onClick={() => !isParentView && setEditingItem(item)}
-                    className={`absolute left-4 right-4 rounded-[2.5rem] p-6 border-4 transition-all group shadow-sm flex flex-col justify-between overflow-hidden ${isLogged ? 'bg-white border-green-400' : 'bg-indigo-50 border-indigo-100 mission-pulse cursor-pointer'}`}
+                    className={`absolute left-4 right-4 rounded-[2.5rem] p-6 border-4 transition-all group shadow-sm flex flex-col justify-between overflow-hidden ${isLogged ? 'bg-white border-green-400 shadow-green-100 shadow-lg' : 'bg-indigo-50 border-indigo-100 mission-pulse cursor-pointer hover:shadow-xl'}`}
                     style={{ top: `${top}px`, height: `${height}px` }}
                   >
                     <div className="flex justify-between items-start gap-4">
@@ -404,7 +426,8 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setEditingItem(null)}></div>
           <div className="bg-white w-full max-w-lg rounded-[3.5rem] shadow-2xl p-12 relative animate-in zoom-in-95 scrollbar-hide max-h-[90vh] overflow-y-auto">
-             <h3 className="text-3xl font-black mb-8 uppercase tracking-tighter text-slate-900">Activity Report</h3>
+             <h3 className="text-3xl font-black mb-2 uppercase tracking-tighter text-slate-900">Mission Debrief</h3>
+             <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-8">LOGGING FOR {dateStr}</p>
              <form onSubmit={handleUpdateItem} className="space-y-6">
                <div className="space-y-2">
                  <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Task Name</label>
@@ -413,20 +436,18 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                <div className="grid grid-cols-2 gap-6">
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Start</label>
-                   {/* Corrected item.startTime to editingItem.startTime to resolve 'item' not found error */}
                    <input type="time" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black text-xl" value={editingItem.startTime} onChange={e => setEditingItem({...editingItem, startTime: e.target.value})} />
                  </div>
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4">End</label>
-                   {/* Corrected item.endTime to editingItem.endTime to resolve 'item' not found error */}
                    <input type="time" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black text-xl" value={editingItem.endTime} onChange={e => setEditingItem({...editingItem, endTime: e.target.value})} />
                  </div>
                </div>
                <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Notes</label>
-                 <textarea rows={3} className="w-full p-6 bg-slate-50 rounded-[2rem] font-medium text-slate-600 outline-none border-4 border-transparent focus:border-indigo-100" value={editingItem.notes || ''} onChange={e => setEditingItem({...editingItem, notes: e.target.value})} />
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Achievement Notes</label>
+                 <textarea rows={3} className="w-full p-6 bg-slate-50 rounded-[2rem] font-medium text-slate-600 outline-none border-4 border-transparent focus:border-indigo-100 resize-none" value={editingItem.notes || ''} onChange={e => setEditingItem({...editingItem, notes: e.target.value})} />
                </div>
-               <button className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition">Update Logs</button>
+               <button className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition">Update Flight Log</button>
              </form>
           </div>
         </div>
