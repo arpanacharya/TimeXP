@@ -3,11 +3,15 @@ import { UserAccount, DailyLog } from '../types';
 import { sql, isCloudEnabled } from './neonClient';
 
 const KEYS = {
-  USERS: 'txp_users',
-  SESSION: 'txp_session',
-  LOGS: 'txp_logs'
+  SESSION: 'txp_session'
 };
 
+/**
+ * Storage Service
+ * 
+ * Exclusively uses Neon Database for persistent data (Users, Logs).
+ * Uses localStorage only for the local session state (Login persistence).
+ */
 export const storageService = {
   getUsers: async (): Promise<UserAccount[]> => {
     if (isCloudEnabled && sql) {
@@ -22,12 +26,15 @@ export const storageService = {
           weeklySchedule: d.weekly_schedule,
           xp: d.xp || 0,
           grade: d.grade,
-          passwordHash: d.password_hash, // Ensure passwordHash is included if present in DB
+          passwordHash: d.password_hash,
           onboardingCompleted: d.onboarding_completed
         })) as UserAccount[];
-      } catch (e) { console.error("Neon Fetch Error:", e); }
+      } catch (e) { 
+        console.error("Neon Fetch Error:", e);
+        throw new Error("Unable to reach Mission Control. Check your connection.");
+      }
     }
-    return JSON.parse(localStorage.getItem(KEYS.USERS) || '[]');
+    throw new Error("Cloud Database is not configured. Mission data cannot be retrieved.");
   },
 
   getUserProfile: async (id: string): Promise<UserAccount | null> => {
@@ -51,13 +58,17 @@ export const storageService = {
             onboarding_completed = EXCLUDED.onboarding_completed,
             updated_at = NOW()
         `;
-      } catch (e) { console.warn("Neon Save Error:", e); }
+      } catch (e) { 
+        console.warn("Neon Save Error:", e);
+        throw new Error("Failed to sync profile to cloud.");
+      }
     }
-    const users = await storageService.getUsers();
-    const idx = users.findIndex(u => u.id === user.id);
-    if (idx > -1) users[idx] = user; else users.push(user);
-    localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-    if (storageService.getSession()?.id === user.id) storageService.setSession(user);
+    
+    // Update local session if this is the currently logged in user
+    const session = storageService.getSession();
+    if (session && session.id === user.id) {
+      storageService.setSession(user);
+    }
   },
 
   deleteUser: async (id: string): Promise<void> => {
@@ -65,15 +76,16 @@ export const storageService = {
       try {
         await sql`DELETE FROM profiles WHERE id = ${id}`;
         await sql`DELETE FROM daily_logs WHERE user_id = ${id}`;
-      } catch (e) { console.warn("Neon Delete Error:", e); }
+      } catch (e) { 
+        console.warn("Neon Delete Error:", e);
+        throw new Error("Failed to purge cloud records.");
+      }
     }
-    const users = await storageService.getUsers();
-    const filteredUsers = users.filter(u => u.id !== id);
-    localStorage.setItem(KEYS.USERS, JSON.stringify(filteredUsers));
     
-    const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
-    const filteredLogs = logs.filter((l: DailyLog) => l.userId !== id);
-    localStorage.setItem(KEYS.LOGS, JSON.stringify(filteredLogs));
+    const session = storageService.getSession();
+    if (session && session.id === id) {
+      storageService.setSession(null);
+    }
   },
 
   getDailyLogs: async (userId: string): Promise<DailyLog[]> => {
@@ -84,10 +96,12 @@ export const storageService = {
           id: d.id, userId: d.user_id, date: d.date, 
           actualActivities: d.actual_activities, plannedSnapshot: d.planned_snapshot
         }));
-      } catch (e) { console.error("Log Fetch Error:", e); }
+      } catch (e) { 
+        console.error("Log Fetch Error:", e);
+        return [];
+      }
     }
-    const all = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
-    return all.filter((l: DailyLog) => l.userId === userId);
+    return [];
   },
 
   saveDailyLog: async (log: DailyLog): Promise<void> => {
@@ -97,22 +111,32 @@ export const storageService = {
           INSERT INTO daily_logs (id, user_id, date, actual_activities, planned_snapshot)
           VALUES (${log.id}, ${log.userId}, ${log.date}, ${JSON.stringify(log.actualActivities)}, ${JSON.stringify(log.plannedSnapshot)})
           ON CONFLICT (user_id, date) DO UPDATE SET
-            actual_activities = EXCLUDED.actual_activities, planned_snapshot = EXCLUDED.planned_snapshot
+            actual_activities = EXCLUDED.actual_activities, 
+            planned_snapshot = EXCLUDED.planned_snapshot
         `;
-      } catch (e) { console.warn("Log Save Error:", e); }
+      } catch (e) { 
+        console.warn("Log Save Error:", e);
+        throw new Error("Mission data could not be synced.");
+      }
     }
-    const all = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
-    const idx = all.findIndex((l: DailyLog) => l.userId === log.userId && l.date === log.date);
-    if (idx > -1) all[idx] = log; else all.push(log);
-    localStorage.setItem(KEYS.LOGS, JSON.stringify(all));
   },
 
   encryptPassword: (p: string) => btoa(p),
   decryptPassword: (p: string) => atob(p),
+  
+  // Session management remains in localStorage for local device state only
   setSession: (u: UserAccount | null) => u ? localStorage.setItem(KEYS.SESSION, JSON.stringify(u)) : localStorage.removeItem(KEYS.SESSION),
   getSession: (): UserAccount | null => {
     const s = localStorage.getItem(KEYS.SESSION);
-    return s ? JSON.parse(s) : null;
+    try {
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
   },
-  clearAll: () => { localStorage.clear(); window.location.reload(); }
+  
+  clearAll: () => { 
+    localStorage.clear(); 
+    window.location.reload(); 
+  }
 };

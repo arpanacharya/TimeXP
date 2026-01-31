@@ -241,16 +241,6 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
 
   const level = Math.floor((activeUser.xp || 0) / 1000) + 1;
 
-  if (activeUser.role === UserRole.PARENT && children.length === 0) {
-    return (
-      <div className="max-w-4xl mx-auto py-32 text-center space-y-10 bg-white rounded-[4rem] shadow-2xl border border-slate-100 fade-in px-8">
-        <div className="text-8xl animate-bounce">🛡️</div>
-        <h2 className="text-4xl font-black tracking-tighter text-slate-900 uppercase">Squad Not Found</h2>
-        <p className="text-slate-500 font-bold max-w-md mx-auto leading-relaxed">It looks like your fleet is empty. Head to the <span className="text-indigo-600 bg-indigo-50 px-2 py-1 rounded">Squad Hub</span> to recruit your first Specialist and start their productivity journey!</p>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-32 fade-in">
       {xpFeedback && (
@@ -328,38 +318,40 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
                 const offsetH = isFullDay ? 0 : 6;
                 const top = ((sH - offsetH) * 60 + sM) * (96/60);
                 const duration = ((eH * 60 + eM) - (sH * 60 + sM));
-                // Remove forced 1-hour minimum to prevent overlap of sequential short tasks
-                const height = Math.max(30, duration * (96/60)); 
+                // Strictly fit within the time values as requested.
+                const height = Math.max(20, duration * (96/60)); 
                 const isLogged = item.status === 'LOGGED';
 
                 return (
                   <div 
                     key={item.id}
                     onClick={() => setViewingItem(item)}
-                    className={`absolute left-4 right-4 rounded-[2.5rem] p-4 sm:p-6 border-4 transition-all group shadow-sm flex flex-col justify-between overflow-hidden cursor-pointer ${isLogged ? 'bg-white border-green-400 shadow-green-100 shadow-lg' : 'bg-indigo-50 border-indigo-100 mission-pulse hover:shadow-xl'}`}
+                    className={`absolute left-4 right-4 rounded-[1.5rem] sm:rounded-[2.5rem] p-4 sm:p-6 border-4 transition-all group shadow-sm flex flex-col justify-between overflow-hidden cursor-pointer ${isLogged ? 'bg-white border-green-400 shadow-green-100 shadow-lg' : 'bg-indigo-50 border-indigo-100 mission-pulse hover:shadow-xl'}`}
                     style={{ top: `${top}px`, height: `${height}px` }}
                   >
                     <div className="flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-0.5 sm:mb-1">
-                           <h4 className={`font-black uppercase tracking-tight truncate ${height < 60 ? 'text-sm' : 'text-lg text-slate-800'}`}>{item.label}</h4>
-                           {item.plannedSubject && height >= 60 && <span className="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">{item.plannedSubject}</span>}
+                           <h4 className={`font-black uppercase tracking-tight truncate ${height < 50 ? 'text-[10px]' : 'text-lg text-slate-800'}`}>{item.label}</h4>
+                           {item.plannedSubject && height >= 80 && <span className="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">{item.plannedSubject}</span>}
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.startTime} - {item.endTime}</p>
+                        <p className={`text-[9px] font-black uppercase tracking-widest ${height < 40 ? 'hidden' : 'text-slate-400'}`}>{item.startTime} - {item.endTime}</p>
                         {item.notes && height >= 120 && <p className="text-[11px] text-slate-500 font-medium italic mt-3 border-l-2 border-indigo-100 pl-4 py-1 truncate">"{item.notes}"</p>}
                       </div>
                       
                       <div className="flex gap-2 items-center">
                         {isLogged ? (
-                           <div className="bg-green-100 text-green-600 p-2 sm:p-3 rounded-2xl shrink-0">
-                              <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                           <div className={`bg-green-100 text-green-600 p-2 sm:p-3 rounded-xl shrink-0 ${height < 40 ? 'scale-75' : ''}`}>
+                              <svg className="w-4 h-4 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
                            </div>
                         ) : (
                           !isParentView && height >= 60 && <button onClick={(e) => { e.stopPropagation(); activateMission(item); }} className="bg-indigo-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition shrink-0">VERIFY</button>
                         )}
-                        <div className="text-slate-300 group-hover:text-indigo-400 transition-colors">
-                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"/></svg>
-                        </div>
+                        {height >= 40 && (
+                          <div className="text-slate-300 group-hover:text-indigo-400 transition-colors">
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"/></svg>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
