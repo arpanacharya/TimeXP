@@ -38,11 +38,30 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
     setSchedule(activeUser.weeklySchedule);
   }, [activeUser]);
 
+  const persist = async (updatedSchedule: WeeklySchedule) => {
+    setIsSaving(true);
+    try {
+      const updatedUser = { ...activeUser, weeklySchedule: updatedSchedule };
+      await storageService.saveUser(updatedUser);
+      
+      if (activeUser.id === user.id) {
+        onUpdate(updatedUser);
+      } else {
+        // Just update local reference if managing child
+        setActiveUser(prev => ({ ...prev, weeklySchedule: updatedSchedule }));
+      }
+    } catch (err) {
+      console.error("Auto-sync failed", err);
+    } finally {
+      // Small delay to make the "Syncing" state visible to user
+      setTimeout(() => setIsSaving(false), 800);
+    }
+  };
+
   const addItem = () => {
     const dayItems = schedule[selectedDay] || [];
     const lastItem = dayItems[dayItems.length - 1];
     
-    // Sequential time logic: use last item's end time as new start time
     let startTime = '08:00';
     if (lastItem) {
       startTime = lastItem.endTime;
@@ -62,12 +81,16 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
       reminderMinutes: 10
     };
     
-    setSchedule({ ...schedule, [selectedDay]: [...dayItems, newItem] });
+    const nextSchedule = { ...schedule, [selectedDay]: [...dayItems, newItem] };
+    setSchedule(nextSchedule);
+    persist(nextSchedule);
   };
 
   const updateItem = (itemId: string, updates: Partial<ScheduleItem>) => {
     const dayItems = (schedule[selectedDay] || []).map(item => item.id === itemId ? { ...item, ...updates } : item);
-    setSchedule({ ...schedule, [selectedDay]: dayItems });
+    const nextSchedule = { ...schedule, [selectedDay]: dayItems };
+    setSchedule(nextSchedule);
+    persist(nextSchedule);
   };
 
   const applyDuration = (itemId: string, startTime: string, mins: number) => {
@@ -80,14 +103,19 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
   };
 
   const cloneDay = () => {
-    const nextDay = DAYS[(DAYS.indexOf(selectedDay) + 1) % 7];
+    const nextDayIdx = (DAYS.indexOf(selectedDay) + 1) % 7;
+    const nextDay = DAYS[nextDayIdx];
     const cloned = (schedule[selectedDay] || []).map(item => ({ ...item, id: Math.random().toString(36).substr(2, 9) }));
-    setSchedule({ ...schedule, [nextDay]: cloned });
+    const nextSchedule = { ...schedule, [nextDay]: cloned };
+    setSchedule(nextSchedule);
     setSelectedDay(nextDay);
+    persist(nextSchedule);
   };
 
   const removeItem = (itemId: string) => {
-    setSchedule({ ...schedule, [selectedDay]: (schedule[selectedDay] || []).filter(item => item.id !== itemId) });
+    const nextSchedule = { ...schedule, [selectedDay]: (schedule[selectedDay] || []).filter(item => item.id !== itemId) };
+    setSchedule(nextSchedule);
+    persist(nextSchedule);
   };
 
   const getDurationString = (start: string, end: string) => {
@@ -113,25 +141,6 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
     }
     return ids;
   }, [schedule, selectedDay]);
-
-  const save = async () => {
-    setIsSaving(true);
-    try {
-      const updatedUser = { ...activeUser, weeklySchedule: schedule };
-      await storageService.saveUser(updatedUser);
-      
-      if (activeUser.id === user.id) {
-        onUpdate(updatedUser);
-      } else {
-        setActiveUser(updatedUser);
-      }
-      alert(`Schedule for ${activeUser.name} has been deployed! 📡`);
-    } catch (err) {
-      alert("Failed to sync schedule.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   if (isParentView && children.length === 0) {
     return (
@@ -162,21 +171,20 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-end gap-6 px-4">
-        <div>
+      <div className="flex flex-col md:flex-row justify-between items-center md:items-end gap-6 px-4">
+        <div className="text-center md:text-left">
           <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Weekly Master Schedule</h2>
-          <div className="flex items-center gap-4 mt-1">
+          <div className="flex items-center justify-center md:justify-start gap-4 mt-1">
             <span className="text-indigo-600 font-black text-[11px] uppercase tracking-widest">{activeUser.name}'s {selectedDay}</span>
-            <button onClick={cloneDay} className="text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-indigo-600 bg-slate-100 px-3 py-1 rounded-full">Copy Day Data →</button>
+            <button onClick={cloneDay} className="text-slate-400 font-black text-[10px] uppercase tracking-widest hover:text-indigo-600 bg-slate-100 px-3 py-1 rounded-full transition-colors">Copy to Tomorrow →</button>
           </div>
         </div>
-        <button 
-          onClick={save} 
-          disabled={isSaving}
-          className="w-full md:w-auto px-12 py-5 bg-indigo-600 text-white rounded-[2.5rem] font-black shadow-2xl hover:bg-indigo-700 hover:scale-105 transition-all uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-3"
-        >
-          {isSaving ? "Syncing..." : isParentView ? "Deploy Schedule 📡" : "Lock Weekly Schedule 🔒"}
-        </button>
+        <div className="flex items-center gap-3 bg-white/50 px-6 py-3 rounded-2xl border border-slate-200">
+          <div className={`w-2 h-2 rounded-full ${isSaving ? 'bg-amber-400 animate-pulse' : 'bg-green-500'}`}></div>
+          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">
+            {isSaving ? "Syncing..." : "Cloud Saved"}
+          </span>
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-[3rem] shadow-xl border border-slate-100 flex space-x-2 overflow-x-auto scrollbar-hide">
@@ -220,7 +228,7 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
           <div className="bg-indigo-600 text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
           </div>
-          <span className="uppercase tracking-widest text-[10px] font-black">Add Sequential Task</span>
+          <span className="uppercase tracking-widest text-[10px] font-black">Add Mission Slot</span>
         </button>
 
         {schedule[selectedDay]?.map(item => (
@@ -256,6 +264,11 @@ export const ScheduleEditor: React.FC<Props> = ({ user, onUpdate }) => {
             </div>
           </div>
         ))}
+        {(!schedule[selectedDay] || schedule[selectedDay].length === 0) && (
+          <div className="py-20 text-center text-slate-300 font-black uppercase text-xs tracking-widest">
+             No missions drafted for this rotation.
+          </div>
+        )}
       </div>
     </div>
   );
