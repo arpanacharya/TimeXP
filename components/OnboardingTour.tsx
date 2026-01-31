@@ -18,12 +18,12 @@ const STEPS = [
   },
   {
     title: "Earn XP & Rewards",
-    content: "Complete missions to earn XP. Planned missions give 50 XP, while spontaneous 'off-blueprint' tasks give 25 XP.",
+    content: "Complete missions to earn XP. Planned missions give 50 XP, while spontaneous 'off-schedule' tasks give 25 XP.",
     icon: "⚡"
   },
   {
-    title: "Blueprint Planning",
-    content: "Head to the 'Schedule' tab to draft your weekly blueprint. Tactical Intel AI will analyze it to give you a strategic edge.",
+    title: "Schedule Management",
+    content: "Head to the 'Schedule' tab to draft your weekly plan. Tactical Intel AI will analyze it to give you a strategic edge.",
     icon: "🗺️"
   }
 ];

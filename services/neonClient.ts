@@ -1,10 +1,10 @@
 
 import { neon } from '@neondatabase/serverless';
 
+// process.env.NEON_DATABASE_URL is injected by Vite during build/dev
 const databaseUrl = process.env.NEON_DATABASE_URL || '';
 
-// The neon() function creates an HTTP-based connection to Postgres
-export const sql = databaseUrl && databaseUrl !== 'undefined' 
+export const sql = databaseUrl && databaseUrl !== 'undefined' && databaseUrl !== ''
   ? neon(databaseUrl) 
   : null;
 

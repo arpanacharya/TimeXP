@@ -16,52 +16,45 @@ export enum GradeLevel {
   UNIVERSITY = 'UNIVERSITY'
 }
 
-export const STUDY_SUBJECTS = [
-  'Math', 'Science', 'History', 'English', 'Geography', 
-  'Art', 'Music', 'Physical Education', 'Computer Science', 
-  'Foreign Language', 'Social Studies', 'Physics', 'Biology', 
-  'Chemistry', 'Calculus', 'Literature', 'Psychology', 'Economics'
-];
-
 export enum UserRole {
   STUDENT = 'STUDENT',
   PARENT = 'PARENT'
 }
 
-export interface UserAccount {
-  id: string;
-  userId: string;
-  name: string;
-  phone: string;
-  passwordHash: string;
-  role: UserRole;
-  parentId?: string;
-  childrenIds?: string[];
-  weeklySchedule: WeeklySchedule;
-  xp: number;
-  grade?: GradeLevel;
-  specificGrade?: number;
-  onboardingCompleted?: boolean;
-}
-
+// Added plannedSubject and reminderMinutes to resolve errors in ScheduleEditor, App, and demoData
 export interface ScheduleItem {
   id: string;
   category: ActivityCategory;
   startTime: string; 
   endTime: string; 
   label: string;
-  plannedSubject?: string; 
-  actualSubject?: string;  
-  topic?: string; 
-  notes?: string;          
-  completed?: boolean;
-  reminderMinutes?: number;
   plannedId?: string; 
+  completed?: boolean;
   status?: 'LOGGED' | 'PENDING';
+  notes?: string;
+  plannedSubject?: string;
+  reminderMinutes?: number;
 }
 
 export interface WeeklySchedule {
   [day: string]: ScheduleItem[];
+}
+
+// Added phone, childrenIds, and specificGrade to resolve errors in FamilyManagement and TestBed
+export interface UserAccount {
+  id: string;
+  userId: string;
+  name: string;
+  passwordHash: string;
+  role: UserRole;
+  parentId?: string;
+  weeklySchedule: WeeklySchedule;
+  xp: number;
+  grade?: GradeLevel;
+  onboardingCompleted?: boolean;
+  phone?: string;
+  childrenIds?: string[];
+  specificGrade?: number;
 }
 
 export interface DailyLog {

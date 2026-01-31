@@ -5,7 +5,6 @@ import { WeeklySchedule } from "../types";
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): Promise<string> => {
-  // Check if API_KEY is available in the environment
   const apiKey = process.env.API_KEY;
 
   if (!apiKey || apiKey === "undefined") {
@@ -13,7 +12,6 @@ export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): 
     return "Mission Control is currently offline. Follow your standard protocols and stay consistent, Commander!";
   }
 
-  // Fix: Always use the process.env.API_KEY string directly when initializing the client
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const scheduleSummary = Object.entries(schedule)
@@ -23,7 +21,7 @@ export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): 
     }).join('\n');
 
   if (!scheduleSummary) {
-    return "Your mission board is empty. Head to the Blueprint tab to draft your first operations!";
+    return "Your mission board is empty. Head to the Schedule tab to draft your first operations!";
   }
 
   const prompt = `
@@ -36,19 +34,17 @@ export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): 
 
   for (let i = 0; i <= retries; i++) {
     try {
-      // Fix: Use ai.models.generateContent to query the model with the prompt
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
-      // Fix: Access the text output via the .text property (not a method)
       return response.text?.trim() || "Optimal trajectory achieved. Proceed with mission.";
     } catch (error) {
       if (i === retries) {
         console.error("Final Gemini Error:", error);
         return "Tactical link unstable. Rely on your core training for now!";
       }
-      await sleep(1000 * Math.pow(2, i)); // Exponential backoff
+      await sleep(1000 * Math.pow(2, i));
     }
   }
   return "Keep following your goals! Consistency is key.";

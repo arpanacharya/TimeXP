@@ -1,122 +1,99 @@
 
 import React, { useState } from 'react';
 import { UserAccount, UserRole, GradeLevel } from '../types';
-import { isCloudEnabled } from '../services/neonClient';
 import { storageService } from '../services/storageService';
 import { GRADE_TEMPLATES } from '../services/demoData';
 
-interface AuthProps {
-  onLogin: (user: UserAccount) => void;
-}
+interface Props { onLogin: (user: UserAccount) => void; }
 
-const GRADE_INFO = [
-  { level: GradeLevel.ELEMENTARY, icon: '🐣', label: 'Elementary', range: [1, 5] },
-  { level: GradeLevel.MIDDLE, icon: '🚀', label: 'Middle School', range: [6, 8] },
-  { level: GradeLevel.HIGH, icon: '☄️', label: 'High School', range: [9, 12] },
-  { level: GradeLevel.UNIVERSITY, icon: '🏛️', label: 'University', range: [1, 4] },
+const GRADES = [
+  { level: GradeLevel.ELEMENTARY, icon: '🐣', label: 'Elementary' },
+  { level: GradeLevel.MIDDLE, icon: '🚀', label: 'Middle' },
+  { level: GradeLevel.HIGH, icon: '☄️', label: 'High School' },
+  { level: GradeLevel.UNIVERSITY, icon: '🏛️', label: 'University' },
 ];
 
-export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
+export const Auth: React.FC<Props> = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<UserRole>(UserRole.STUDENT);
-  const [grade, setGrade] = useState<GradeLevel>(GradeLevel.MIDDLE);
-  const [specificGrade, setSpecificGrade] = useState<number>(6);
-  const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({ id: '', pass: '', name: '' });
+  const [role, setRole] = useState(UserRole.STUDENT);
+  const [grade, setGrade] = useState(GradeLevel.MIDDLE);
   const [error, setError] = useState('');
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setIsLoading(true);
-
     try {
-      // The storageService handles the logic of checking Neon vs LocalStorage
       const users = await storageService.getUsers();
-      const userId = email.split('@')[0].toLowerCase();
-
+      const userId = formData.id.toLowerCase().trim();
+      
       if (isLogin) {
-        const found = users.find(u => u.userId.toLowerCase() === userId);
-        // In a real app, we'd check passwordHash here. For this demo/sim, we allow access if found.
-        if (found) {
-          onLogin(found);
-        } else {
-          throw new Error("Specialist not found. Check credentials or Enroll.");
-        }
+        const found = users.find(u => u.userId === userId);
+        if (found) onLogin(found);
+        else throw new Error("Personnel record not found.");
       } else {
-        const template = GRADE_TEMPLATES[grade](specificGrade);
+        if (users.some(u => u.userId === userId)) throw new Error("ID already taken.");
+        const template = role === UserRole.STUDENT ? GRADE_TEMPLATES[grade](7) : { schedule: {}, xp: 0 };
         const newUser: UserAccount = {
           id: Math.random().toString(36).substr(2, 9),
-          userId: userId,
-          name: name || userId,
-          phone: '',
-          passwordHash: storageService.encryptPassword(password),
+          userId,
+          name: formData.name,
+          passwordHash: storageService.encryptPassword(formData.pass),
           role,
           grade: role === UserRole.STUDENT ? grade : undefined,
-          specificGrade: role === UserRole.STUDENT ? specificGrade : undefined,
-          weeklySchedule: template.schedule,
+          weeklySchedule: template.schedule as any,
           xp: template.xp,
           onboardingCompleted: false
         };
         await storageService.saveUser(newUser);
         onLogin(newUser);
       }
-    } catch (err: any) {
-      setError(err.message || 'Authentication error.');
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (err: any) { setError(err.message); }
   };
 
   return (
-    <div className="max-w-xl mx-auto mt-10 p-12 bg-white rounded-[3.5rem] shadow-2xl relative border border-slate-100 mb-20 overflow-hidden fade-in">
-      <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-cyan-400 to-purple-500"></div>
-      
-      <div className="absolute top-4 right-8 bg-slate-50 text-slate-400 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border border-slate-100">
-        {isCloudEnabled ? 'Neon Cloud Mode' : 'Local Sandbox Mode'}
+    <div className="max-w-xl mx-auto p-10 bg-white rounded-[3.5rem] shadow-2xl border border-slate-100 fade-in">
+      <div className="text-center mb-10">
+        <div className="w-16 h-16 bg-indigo-600 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white font-black text-3xl shadow-lg rotate-3">XP</div>
+        <h1 className="text-4xl font-black tracking-tighter">TimeXP</h1>
+        <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em] mt-2">Mission Control Portal</p>
       </div>
 
-      <div className="text-center mb-12">
-        <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] mx-auto mb-8 flex items-center justify-center text-white font-black text-4xl shadow-2xl rotate-3">XP</div>
-        <h1 className="text-5xl font-black text-slate-900 mb-3 tracking-tighter">TimeXP</h1>
-        <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
-          Mission Control Authentication
-        </p>
-      </div>
-      
-      <form onSubmit={handleAuth} className="space-y-6">
-        <div className="grid grid-cols-1 gap-4">
-          <input required type="text" className="w-full p-5 border-2 border-slate-50 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold" value={email} onChange={e => setEmail(e.target.value)} placeholder="Username / ID" />
-          <input required type="password" className="w-full p-5 border-2 border-slate-50 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold" value={password} onChange={e => setPassword(e.target.value)} placeholder="Access Key" />
+      {!isLogin && (
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <button onClick={() => setRole(UserRole.STUDENT)} className={`p-6 rounded-3xl border-4 transition-all ${role === UserRole.STUDENT ? 'border-indigo-600 bg-indigo-50 shadow-inner' : 'border-slate-50'}`}>
+            <span className="text-3xl block mb-2">🚀</span>
+            <span className="text-[10px] font-black uppercase">Student</span>
+          </button>
+          <button onClick={() => setRole(UserRole.PARENT)} className={`p-6 rounded-3xl border-4 transition-all ${role === UserRole.PARENT ? 'border-indigo-600 bg-indigo-50 shadow-inner' : 'border-slate-50'}`}>
+            <span className="text-3xl block mb-2">🛡️</span>
+            <span className="text-[10px] font-black uppercase">Parent</span>
+          </button>
         </div>
+      )}
 
-        {!isLogin && (
-          <div className="space-y-8 animate-in slide-in-from-top-4 duration-500">
-            <input required className="w-full p-5 border-2 border-slate-50 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold" value={name} onChange={e => setName(e.target.value)} placeholder="Callsign (Full Name)" />
-            <div className="grid grid-cols-2 gap-4">
-              {GRADE_INFO.map((g) => (
-                <button key={g.level} type="button" onClick={() => { setGrade(g.level); setSpecificGrade(g.range[0]); }} className={`flex flex-col items-center gap-3 p-6 rounded-[2.5rem] border-2 transition-all duration-300 ${grade === g.level ? 'bg-indigo-600 border-indigo-600 text-white shadow-2xl scale-105' : 'bg-slate-50 border-slate-100 text-slate-400 hover:border-indigo-100 hover:bg-white'}`}>
-                  <span className="text-3xl">{g.icon}</span>
-                  <span className="text-[10px] font-black uppercase tracking-widest">{g.label}</span>
-                </button>
-              ))}
-            </div>
+      <form onSubmit={submit} className="space-y-4">
+        {!isLogin && <input required className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Full Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />}
+        <input required className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Access ID" value={formData.id} onChange={e => setFormData({...formData, id: e.target.value})} />
+        <input required type="password" className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Access Key" value={formData.pass} onChange={e => setFormData({...formData, pass: e.target.value})} />
+        
+        {!isLogin && role === UserRole.STUDENT && (
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            {GRADES.map(g => (
+              <button key={g.level} type="button" onClick={() => setGrade(g.level)} className={`p-4 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${grade === g.level ? 'bg-indigo-600 text-white' : 'bg-slate-50'}`}>{g.icon} {g.label}</button>
+            ))}
           </div>
         )}
 
-        <button disabled={isLoading} className="w-full bg-indigo-600 text-white py-6 rounded-[2.5rem] font-black text-xl hover:bg-indigo-700 transition shadow-2xl uppercase tracking-[0.2em]">
-          {isLoading ? 'Decrypting...' : isLogin ? 'Initialize Station 🌐' : 'Enroll Specialist ✨'}
+        <button className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 transition mt-6">
+          {isLogin ? 'Log In 🌐' : 'Deploy 🚀'}
         </button>
       </form>
-
-      <div className="mt-12 text-center">
-        <button onClick={() => setIsLogin(!isLogin)} className="text-slate-400 font-black text-xs uppercase tracking-widest hover:text-indigo-600 transition">
-          {isLogin ? "Request New Deployment" : "Return to Login Protocol"}
-        </button>
-      </div>
-      {error && <p className="text-red-500 mt-6 text-center font-black bg-red-50 p-5 rounded-3xl border border-red-100">{error}</p>}
+      
+      <button onClick={() => setIsLogin(!isLogin)} className="w-full text-center mt-8 text-[10px] font-black uppercase text-slate-400 hover:text-indigo-600 transition">
+        {isLogin ? "New Specialist? Enroll Here" : "Already Registered? Sign In"}
+      </button>
+      {error && <p className="mt-4 text-center text-red-500 font-black text-xs bg-red-50 p-4 rounded-2xl">{error}</p>}
     </div>
   );
 };
