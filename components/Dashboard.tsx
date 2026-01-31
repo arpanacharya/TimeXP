@@ -23,6 +23,7 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
   const [advice, setAdvice] = useState<string>('');
   const [isAdviceLoading, setIsAdviceLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isFullDay, setIsFullDay] = useState(false);
   const [xpFeedback, setXpFeedback] = useState<{ amount: number; reason: string } | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
@@ -49,44 +50,47 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     }
   }, [user.id, isParentView]);
 
-  useEffect(() => {
-    const initDashboard = async () => {
-      if (activeUser.role === UserRole.PARENT && children.length === 0) return;
+  const initDashboard = async (forceSync = false) => {
+    if (activeUser.role === UserRole.PARENT && children.length === 0) return;
+    
+    setIsSyncing(true);
+    try {
+      const logs = await storageService.getDailyLogs(activeUser.id);
+      let log = logs.find(l => l.date === dateStr);
       
-      setIsSyncing(true);
-      try {
-        const logs = await storageService.getDailyLogs(activeUser.id);
-        let log = logs.find(l => l.date === dateStr);
+      if (!log || forceSync) {
+        const plannedItems = (activeUser.weeklySchedule?.[todayName] || []).map(item => ({ 
+          ...item, 
+          id: Math.random().toString(36).substr(2, 9) 
+        }));
         
-        if (!log) {
-          const plannedItems = (activeUser.weeklySchedule?.[todayName] || []).map(item => ({ 
-            ...item, 
-            id: Math.random().toString(36).substr(2, 9) 
-          }));
-          log = {
-            id: Math.random().toString(36).substr(2, 9),
-            userId: activeUser.id,
-            date: dateStr,
-            actualActivities: [],
-            plannedSnapshot: plannedItems
-          };
-          await storageService.saveDailyLog(log);
-        }
-        setTodayLog(log);
-      } catch (err) {
-        console.error("Dashboard init error:", err);
-      } finally {
-        setIsSyncing(false);
+        const existingActivities = log?.actualActivities || [];
+        
+        log = {
+          id: log?.id || Math.random().toString(36).substr(2, 9),
+          userId: activeUser.id,
+          date: dateStr,
+          actualActivities: existingActivities,
+          plannedSnapshot: plannedItems
+        };
+        await storageService.saveDailyLog(log);
       }
-      
-      setIsAdviceLoading(true);
-      if (activeUser.weeklySchedule) {
-        const adviceStr = await getScheduleAdvice(activeUser.weeklySchedule);
-        setAdvice(adviceStr);
-      }
-      setIsAdviceLoading(false);
-    };
+      setTodayLog(log);
+    } catch (err) {
+      console.error("Dashboard init error:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+    
+    setIsAdviceLoading(true);
+    if (activeUser.weeklySchedule) {
+      const adviceStr = await getScheduleAdvice(activeUser.weeklySchedule);
+      setAdvice(adviceStr);
+    }
+    setIsAdviceLoading(false);
+  };
 
+  useEffect(() => {
     initDashboard();
   }, [activeUser.id, activeUser.weeklySchedule, todayName, dateStr, children.length]);
 
@@ -117,30 +121,11 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     setIsSyncing(true);
     let updatedLog = { ...todayLog };
     const isExistingActual = todayLog.actualActivities.some(a => a.id === editingItem.id);
-    const isExistingPlanned = todayLog.plannedSnapshot.some(p => p.id === editingItem.id);
 
     try {
       if (isExistingActual) {
         updatedLog.actualActivities = todayLog.actualActivities.map(a => a.id === editingItem.id ? editingItem : a);
-      } else if (isExistingPlanned) {
-        // If we are updating a planned item, we actually want to "verify" it into the actual activities
-        const actualItem: ScheduleItem = {
-          ...editingItem,
-          id: Math.random().toString(36).substr(2, 9),
-          plannedId: editingItem.id,
-          completed: true,
-          status: 'LOGGED'
-        };
-        updatedLog.actualActivities = [...todayLog.actualActivities, actualItem];
-        
-        const newXp = (activeUser.xp || 0) + 50;
-        const updatedUser = { ...activeUser, xp: newXp };
-        await storageService.saveUser(updatedUser);
-        setActiveUser(updatedUser);
-        setXpFeedback({ amount: 50, reason: "Task Verified" });
-        setTimeout(() => setXpFeedback(null), 2000);
       } else {
-        // Purely manual new entry
         const newItem = { ...editingItem, completed: true, status: 'LOGGED' as const };
         updatedLog.actualActivities = [...todayLog.actualActivities, newItem];
         
@@ -149,13 +134,13 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         await storageService.saveUser(updatedUser);
         setActiveUser(updatedUser);
         setXpFeedback({ amount: 25, reason: "Manual Entry" });
-        setTimeout(() => setXpFeedback(null), 2000);
       }
 
       await storageService.saveDailyLog(updatedLog);
       setTodayLog(updatedLog);
       setEditingItem(null);
       onToast("Operation Logged 📡");
+      setTimeout(() => setXpFeedback(null), 2000);
     } catch (err) {
       onToast("Sync error.");
     } finally {
@@ -208,6 +193,10 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
     }
   };
 
+  const hoursToDisplay = isFullDay 
+    ? Array.from({ length: 24 }).map((_, i) => i) 
+    : Array.from({ length: 18 }).map((_, i) => i + 6); // 6 AM to 11 PM
+
   const level = Math.floor((activeUser.xp || 0) / 1000) + 1;
 
   if (activeUser.role === UserRole.PARENT && children.length === 0) {
@@ -227,25 +216,6 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         <div className="fixed top-48 left-1/2 -translate-x-1/2 z-[150] xp-float">
           <div className="bg-indigo-600 text-white px-10 py-5 rounded-full shadow-2xl border-4 border-white font-black text-3xl">
             +{xpFeedback.amount} XP
-          </div>
-        </div>
-      )}
-
-      {/* Parent Selector UI */}
-      {isParentView && (
-        <div className="flex flex-col items-center gap-4 bg-white/50 backdrop-blur-md p-6 rounded-[3rem] border border-slate-100 shadow-sm mb-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">COMMANDER VIEW: MONITORING SPECIALIST</p>
-          <div className="flex gap-4 overflow-x-auto scrollbar-hide p-2 max-w-full">
-            {children.map(child => (
-              <button 
-                key={child.id}
-                onClick={() => setActiveUser(child)}
-                className={`flex items-center gap-3 px-8 py-4 rounded-3xl text-[11px] font-black uppercase tracking-widest transition-all whitespace-nowrap shadow-md ${activeUser.id === child.id ? 'bg-indigo-600 text-white scale-105' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
-              >
-                <span className="text-xl">{child.grade ? GRADE_AVATARS[child.grade] : '👤'}</span>
-                {child.name.split(' ')[0]}
-              </button>
-            ))}
           </div>
         </div>
       )}
@@ -278,56 +248,73 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         <section className="lg:col-span-2 space-y-6">
           <div className="flex justify-between items-center px-6">
             <h2 className="text-3xl font-black tracking-tighter uppercase text-slate-900">Today's Timeline</h2>
-            {!isParentView && (
-              <button onClick={handleNewManualEntry} className="bg-white text-indigo-600 border border-indigo-100 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-50 transition shadow-sm">+ Manual Entry</button>
-            )}
+            <div className="flex gap-3">
+              <button onClick={() => initDashboard(true)} className="bg-slate-100 text-slate-600 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition shadow-sm">Sync Plan</button>
+              {!isParentView && (
+                <button onClick={handleNewManualEntry} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition shadow-xl">+ Log Entry</button>
+              )}
+            </div>
           </div>
 
           <div className="bg-white rounded-[3.5rem] shadow-xl border border-slate-100 min-h-[600px] relative overflow-hidden flex flex-col md:flex-row">
-            <div className="w-full md:w-20 bg-slate-50/50 border-b md:border-b-0 md:border-r border-slate-100 flex md:flex-col overflow-x-auto md:overflow-x-visible">
-              {Array.from({ length: 24 }).map((_, h) => (
-                <div key={h} className="min-w-[80px] md:min-w-0 h-20 border-r md:border-r-0 md:border-b border-slate-200/50 flex items-center justify-center text-[9px] font-black text-slate-300">
+            {/* Hour Labels */}
+            <div className="w-full md:w-20 bg-slate-50/50 border-b md:border-b-0 md:border-r border-slate-100 flex md:flex-col overflow-x-auto md:overflow-x-visible custom-scroll">
+              {hoursToDisplay.map(h => (
+                <div key={h} className="min-w-[80px] md:min-w-0 h-24 border-r md:border-r-0 md:border-b border-slate-200/50 flex items-center justify-center text-[10px] font-black text-slate-400">
                   {String(h).padStart(2, '0')}:00
                 </div>
               ))}
             </div>
+
+            {/* Timeline Content */}
             <div className="flex-grow relative blueprint-bg overflow-y-auto max-h-[700px] scrollbar-hide px-6 py-4" ref={timelineRef}>
-              {Array.from({ length: 24 }).map((_, h) => <div key={h} className="h-20 border-b border-slate-100/20"></div>)}
+              <div className="sticky top-0 right-0 flex justify-end pb-4 z-20">
+                <button onClick={() => setIsFullDay(!isFullDay)} className="bg-white/80 backdrop-blur px-4 py-2 rounded-full border border-slate-200 text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 shadow-sm hover:bg-white transition-all">
+                  {isFullDay ? "Hide Night Cycles" : "Show Full 24H"}
+                </button>
+              </div>
+
+              {hoursToDisplay.map(h => <div key={h} className="h-24 border-b border-slate-100/20"></div>)}
               
               {unifiedTimeline.map(item => {
                 const sH = parseInt(item.startTime.split(':')[0]);
                 const sM = parseInt(item.startTime.split(':')[1]);
                 const eH = parseInt(item.endTime.split(':')[0]);
                 const eM = parseInt(item.endTime.split(':')[1]);
-                const top = (sH * 60 + sM) * (80/60);
-                const height = Math.max(80, ((eH * 60 + eM) - (sH * 60 + sM)) * (80/60));
+
+                // Filter items outside display range if not in 24h mode
+                if (!isFullDay && (sH < 6 || sH >= 24)) return null;
+
+                const offsetH = isFullDay ? 0 : 6;
+                const top = ((sH - offsetH) * 60 + sM) * (96/60);
+                const height = Math.max(96, ((eH * 60 + eM) - (sH * 60 + sM)) * (96/60));
                 const isLogged = item.status === 'LOGGED';
 
                 return (
                   <div 
                     key={item.id}
                     onClick={() => !isParentView && setEditingItem(item)}
-                    className={`absolute left-4 right-4 rounded-[2rem] p-6 border-4 transition-all group shadow-sm flex flex-col justify-between ${isLogged ? 'bg-white border-green-400' : 'bg-indigo-50 border-indigo-100 mission-pulse cursor-pointer'}`}
+                    className={`absolute left-4 right-4 rounded-[2.5rem] p-6 border-4 transition-all group shadow-sm flex flex-col justify-between overflow-hidden ${isLogged ? 'bg-white border-green-400' : 'bg-indigo-50 border-indigo-100 mission-pulse cursor-pointer'}`}
                     style={{ top: `${top}px`, height: `${height}px` }}
                   >
-                    <div className="flex justify-between items-start">
+                    <div className="flex justify-between items-start gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
                            <h4 className="font-black text-slate-800 text-lg uppercase tracking-tight truncate">{item.label}</h4>
-                           {item.plannedSubject && <span className="bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest">{item.plannedSubject}</span>}
+                           {item.plannedSubject && <span className="bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">{item.plannedSubject}</span>}
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 mt-1 uppercase tracking-widest">{item.startTime} - {item.endTime}</p>
-                        {item.notes && <p className="text-[10px] text-slate-500 font-medium italic mt-2 line-clamp-2">"{item.notes}"</p>}
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.startTime} - {item.endTime}</p>
+                        {item.notes && <p className="text-[11px] text-slate-500 font-medium italic mt-3 border-l-2 border-indigo-100 pl-4 py-1">"{item.notes}"</p>}
                       </div>
+                      
                       {isLogged ? (
-                         <div className="bg-green-100 text-green-600 p-2 rounded-xl">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                         <div className="bg-green-100 text-green-600 p-3 rounded-2xl shrink-0">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
                          </div>
                       ) : (
-                        !isParentView && <button onClick={(e) => { e.stopPropagation(); activateMission(item); }} className="bg-indigo-600 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition">COMPLETE</button>
+                        !isParentView && <button onClick={(e) => { e.stopPropagation(); activateMission(item); }} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-105 active:scale-95 transition shrink-0">COMPLETE</button>
                       )}
                     </div>
-                    {!isLogged && <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Awaiting Verification</div>}
                   </div>
                 );
               })}
@@ -370,40 +357,40 @@ export const Dashboard: React.FC<Props> = ({ user, onToast }) => {
         </aside>
       </div>
 
-      {/* Enhanced Manual Entry Modal */}
+      {/* Manual Entry / Update Modal */}
       {editingItem && !isParentView && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setEditingItem(null)}></div>
-          <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl p-10 relative animate-in zoom-in-95 scrollbar-hide max-h-[90vh] overflow-y-auto">
-             <h3 className="text-2xl font-black mb-8 uppercase tracking-tighter">Mission Log Update</h3>
+          <div className="bg-white w-full max-w-lg rounded-[3.5rem] shadow-2xl p-12 relative animate-in zoom-in-95 scrollbar-hide max-h-[90vh] overflow-y-auto">
+             <h3 className="text-3xl font-black mb-8 uppercase tracking-tighter text-slate-900">Mission Debrief</h3>
              <form onSubmit={handleUpdateItem} className="space-y-6">
                <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Objective Name</label>
-                 <input className="w-full p-5 bg-slate-50 rounded-2xl font-bold text-xl outline-none border-4 border-transparent focus:border-indigo-100" value={editingItem.label} onChange={e => setEditingItem({...editingItem, label: e.target.value})} placeholder="What did you do?" />
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Activity Name</label>
+                 <input required className="w-full p-6 bg-slate-50 rounded-[2rem] font-bold text-xl outline-none border-4 border-transparent focus:border-indigo-100" value={editingItem.label} onChange={e => setEditingItem({...editingItem, label: e.target.value})} placeholder="e.g. Science Revision" />
                </div>
                
                <div className="space-y-2">
                  <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Subject Sector</label>
-                 <input className="w-full p-5 bg-slate-50 rounded-2xl font-bold text-lg outline-none border-4 border-transparent focus:border-indigo-100" value={editingItem.plannedSubject || ''} onChange={e => setEditingItem({...editingItem, plannedSubject: e.target.value})} placeholder="e.g. Mathematics, Science" />
+                 <input className="w-full p-6 bg-slate-50 rounded-[2rem] font-bold text-lg outline-none border-4 border-transparent focus:border-indigo-100" value={editingItem.plannedSubject || ''} onChange={e => setEditingItem({...editingItem, plannedSubject: e.target.value})} placeholder="e.g. Mathematics" />
                </div>
 
                <div className="grid grid-cols-2 gap-6">
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Start Time</label>
-                   <input type="time" className="w-full p-5 bg-slate-50 rounded-2xl font-black text-xl" value={editingItem.startTime} onChange={e => setEditingItem({...editingItem, startTime: e.target.value})} />
+                   <input type="time" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black text-xl" value={editingItem.startTime} onChange={e => setEditingItem({...editingItem, startTime: e.target.value})} />
                  </div>
                  <div className="space-y-2">
                    <label className="text-[10px] font-black text-slate-400 uppercase ml-4">End Time</label>
-                   <input type="time" className="w-full p-5 bg-slate-50 rounded-2xl font-black text-xl" value={editingItem.endTime} onChange={e => setEditingItem({...editingItem, endTime: e.target.value})} />
+                   <input type="time" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black text-xl" value={editingItem.endTime} onChange={e => setEditingItem({...editingItem, endTime: e.target.value})} />
                  </div>
                </div>
 
                <div className="space-y-2">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Mission Notes</label>
-                 <textarea rows={3} className="w-full p-5 bg-slate-50 rounded-2xl font-medium text-slate-600 outline-none border-4 border-transparent focus:border-indigo-100 resize-none" value={editingItem.notes || ''} onChange={e => setEditingItem({...editingItem, notes: e.target.value})} placeholder="Enter additional details or reflections..." />
+                 <label className="text-[10px] font-black text-slate-400 uppercase ml-4">Progress Notes</label>
+                 <textarea rows={3} className="w-full p-6 bg-slate-50 rounded-[2rem] font-medium text-slate-600 outline-none border-4 border-transparent focus:border-indigo-100 resize-none" value={editingItem.notes || ''} onChange={e => setEditingItem({...editingItem, notes: e.target.value})} placeholder="What did you achieve during this time?" />
                </div>
 
-               <button className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition">Update Record</button>
+               <button className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-600 transition">Commit to History</button>
              </form>
           </div>
         </div>
