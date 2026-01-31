@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { UserAccount, UserRole, GradeLevel } from '../types';
-import { storageService } from '../services/storageService';
-import { GRADE_TEMPLATES } from '../services/demoData';
+import { UserAccount, UserRole, GradeLevel } from '../types.ts';
+import { storageService } from '../services/storageService.ts';
+import { GRADE_TEMPLATES } from '../services/demoData.ts';
 
 interface Props { onLogin: (user: UserAccount) => void; }
 
@@ -19,32 +19,36 @@ export const Auth: React.FC<Props> = ({ onLogin }) => {
   const [role, setRole] = useState(UserRole.STUDENT);
   const [grade, setGrade] = useState(GradeLevel.MIDDLE);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
     try {
       const users = await storageService.getUsers();
       const userId = formData.id.toLowerCase().trim();
       const hashedPass = storageService.encryptPassword(formData.pass);
       
       if (isLogin) {
-        const found = users.find(u => u.userId === userId);
+        const found = users.find(u => u.userId === userId || u.id === userId);
         if (found) {
-          // VERIFY PASSWORD HASH
           if (found.passwordHash === hashedPass) {
             onLogin(found);
           } else {
             throw new Error("Invalid access key (password).");
           }
         }
-        else throw new Error("Personnel record not found.");
+        else throw new Error("Personnel record not found. Try enrolling first.");
       } else {
-        if (users.some(u => u.userId === userId)) throw new Error("ID already taken.");
+        if (users.some(u => u.userId === userId || u.id === userId)) {
+          throw new Error("Access ID is already claimed by another specialist.");
+        }
+        
         const template = role === UserRole.STUDENT ? GRADE_TEMPLATES[grade](7) : { schedule: {}, xp: 0 };
         const newUser: UserAccount = {
-          id: Math.random().toString(36).substr(2, 9),
-          userId,
+          id: userId, // Stable ID
+          userId: userId,
           name: formData.name,
           passwordHash: hashedPass,
           role,
@@ -53,10 +57,15 @@ export const Auth: React.FC<Props> = ({ onLogin }) => {
           xp: template.xp,
           onboardingCompleted: false
         };
+        
         await storageService.saveUser(newUser);
         onLogin(newUser);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { 
+      setError(err.message); 
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -82,7 +91,7 @@ export const Auth: React.FC<Props> = ({ onLogin }) => {
 
       <form onSubmit={submit} className="space-y-4">
         {!isLogin && <input required className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Full Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />}
-        <input required className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Access ID" value={formData.id} onChange={e => setFormData({...formData, id: e.target.value})} />
+        <input required className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Access ID (e.g. pilot_01)" value={formData.id} onChange={e => setFormData({...formData, id: e.target.value})} />
         <input required type="password" className="w-full p-5 bg-slate-50 rounded-2xl font-bold border-2 border-transparent focus:border-indigo-300 outline-none" placeholder="Access Key" value={formData.pass} onChange={e => setFormData({...formData, pass: e.target.value})} />
         
         {!isLogin && role === UserRole.STUDENT && (
@@ -93,8 +102,8 @@ export const Auth: React.FC<Props> = ({ onLogin }) => {
           </div>
         )}
 
-        <button className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 transition mt-6">
-          {isLogin ? 'Log In 🌐' : 'Deploy 🚀'}
+        <button disabled={isLoading} className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 disabled:opacity-50 transition mt-6">
+          {isLoading ? 'Syncing...' : isLogin ? 'Log In 🌐' : 'Deploy 🚀'}
         </button>
       </form>
       

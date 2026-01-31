@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'schedule' | 'family' | 'history'>('dashboard');
   const [toast, setToast] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   const notifiedRefs = useRef<Set<string>>(new Set());
 
   const showToast = (msg: string) => {
@@ -36,20 +37,19 @@ const App: React.FC = () => {
       }
 
       try {
-        // Automatically ensure tables exist on the current Neon instance
         await storageService.initializeDatabase();
-        
         if (user) {
           const users = await storageService.getUsers();
-          const stillExists = users.find((u: UserAccount) => u.id === user.id);
+          const stillExists = users.find((u: UserAccount) => u.id === user.id || u.userId === user.userId);
           if (!stillExists) {
             handleLogout();
           } else {
             setUser(stillExists);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Mission Control Initialization Failed:", err);
+        setInitError(err.message || "Failed to establish cloud link.");
       } finally {
         setIsValidating(false);
       }
@@ -106,19 +106,18 @@ const App: React.FC = () => {
     </div>
   );
 
-  if (!isCloudEnabled) {
+  if (!isCloudEnabled || initError) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 text-center">
         <div className="max-w-md space-y-8 fade-in">
           <div className="text-8xl">📡</div>
           <h1 className="text-3xl font-black text-white uppercase tracking-tighter">Connection Lost</h1>
           <div className="bg-slate-800 p-8 rounded-[2.5rem] border border-slate-700 space-y-4">
-            <p className="text-slate-400 font-bold text-sm leading-relaxed">
-              Mission Control cannot find the <code className="text-indigo-400">NEON_DATABASE_URL</code> in the environment.
+            <p className="text-slate-400 font-bold text-sm leading-relaxed px-4">
+              {initError ? `Handshake Error: ${initError}` : "Mission Control cannot find the NEON_DATABASE_URL in the environment."}
             </p>
-            <p className="text-slate-500 text-xs italic">
-              1. Add your database URL to Netlify Site Settings.<br/>
-              2. Trigger a new Production Deploy.
+            <p className="text-slate-500 text-[10px] italic uppercase tracking-widest">
+              Check Netlify Settings or Neon Console
             </p>
           </div>
           <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700 transition">Retry Link 🔄</button>

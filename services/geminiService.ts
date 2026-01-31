@@ -5,19 +5,14 @@ import { WeeklySchedule } from "../types";
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): Promise<string> => {
-  let apiKey: string | undefined;
-  try {
-    apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-  } catch (e) {
-    apiKey = undefined;
-  }
-
-  if (!apiKey || apiKey === "undefined" || apiKey === "") {
+  // Use process.env.API_KEY directly as required by guidelines
+  if (!process.env.API_KEY) {
     console.warn("Gemini API Key missing. Tactical Intel is currently in offline mode.");
     return "Mission Control is currently offline. Follow your standard protocols and stay consistent, Commander!";
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  // Initialize with named parameter as required
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const scheduleSummary = Object.entries(schedule)
     .filter(([_, items]) => items.length > 0)
@@ -39,10 +34,12 @@ export const getScheduleAdvice = async (schedule: WeeklySchedule, retries = 2): 
 
   for (let i = 0; i <= retries; i++) {
     try {
+      // Use ai.models.generateContent directly with model and contents as per guidelines
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
       });
+      // Access text property directly (not a method) as per guidelines
       return response.text?.trim() || "Optimal trajectory achieved. Proceed with mission.";
     } catch (error) {
       if (i === retries) {
